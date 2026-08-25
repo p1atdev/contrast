@@ -1,0 +1,84 @@
+schema_version = 1
+
+[run]
+experiment = "cifar100-core"
+output_dir = "runs"
+seed = 0
+tags = ["vit-tiny", "cifar100"]
+
+[data]
+name = "cifar100"
+root = "data"
+download = true
+validation_fraction = 0.1
+num_workers = 4
+pin_memory = true
+
+[data.augmentation]
+crop_padding = 4
+horizontal_flip_probability = 0.5
+color_jitter_strength = 0.5
+grayscale_probability = 0.2
+
+[batch]
+global_source_batch_size = 256
+views = 2
+grad_cache_chunk_size_per_rank = 32
+
+[model]
+name = "vit"
+image_size = 32
+patch_size = 4
+dim = 192
+depth = 12
+num_heads = 3
+mlp_ratio = 4.0
+num_classes = 100
+dropout = 0.0
+attention_dropout = 0.0
+
+[model.layers]
+normalization = "layer_norm"
+activation = "gelu"
+attention = "eager"
+norm_position = "pre"
+norm_eps = 1e-6
+
+[model.projection]
+hidden_dim = 768
+output_dim = 128
+
+[objective]
+kind = "supcon"
+temperature = 0.1
+
+[optimizer]
+kind = "adamw_schedule_free"
+lr = 0.001
+betas = [0.9, 0.999]
+eps = 1e-8
+weight_decay = 0.05
+warmup_steps = 500
+
+[precision]
+parameter_dtype = "float32"
+autocast_dtype = "bfloat16"
+loss_dtype = "float32"
+allow_tf32 = true
+matmul_precision = "high"
+
+[reproducibility]
+mode = "seeded"
+cudnn_benchmark = false
+
+[training]
+epochs = 400
+step_strategy = "grad_cache"
+log_every_steps = 20
+evaluate_every_epochs = 1
+checkpoint_every_epochs = 10
+gradient_clip_norm = 1.0
+
+[evaluation]
+enabled = true
+knn_k = 20

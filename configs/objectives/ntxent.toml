@@ -1,0 +1,5 @@
+extends = "../base.toml"
+
+[objective]
+kind = "ntxent"
+temperature = 0.1

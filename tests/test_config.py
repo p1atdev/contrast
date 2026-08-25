@@ -1,0 +1,28 @@
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from contrast.config.loader import load_experiment_config
+
+
+def test_objective_override_replaces_discriminated_table() -> None:
+    config = load_experiment_config(Path("configs/objectives/sigmoid_supcon.toml"))
+    assert config.objective.kind == "sigmoid_supcon"
+    assert config.objective.scale_init == 10.0
+
+
+def test_unknown_config_key_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.toml"
+    path.write_text("schema_version = 1\nunknown = true\n")
+    with pytest.raises(ValidationError):
+        load_experiment_config(path)
+
+
+def test_dotted_override_is_validated() -> None:
+    config = load_experiment_config(
+        "configs/base.toml",
+        ["run.seed=7", "batch.global_source_batch_size=64"],
+    )
+    assert config.run.seed == 7
+    assert config.batch.global_source_batch_size == 64

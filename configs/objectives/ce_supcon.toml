@@ -1,0 +1,7 @@
+extends = "../base.toml"
+
+[objective]
+kind = "ce_supcon"
+temperature = 0.1
+contrastive_weight = 1.0
+cross_entropy_weight = 1.0

@@ -1,0 +1,30 @@
+extends = "../base.toml"
+
+[run]
+experiment = "smoke"
+
+[data]
+num_workers = 0
+
+[batch]
+global_source_batch_size = 16
+grad_cache_chunk_size_per_rank = 4
+
+[model]
+dim = 96
+depth = 2
+num_heads = 3
+
+[model.projection]
+hidden_dim = 192
+output_dim = 64
+
+[training]
+epochs = 1
+max_steps = 3
+log_every_steps = 1
+evaluate_every_epochs = 1
+checkpoint_every_epochs = 1
+
+[evaluation]
+enabled = false
