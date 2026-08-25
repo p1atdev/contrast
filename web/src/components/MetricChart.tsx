@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -10,29 +10,40 @@ const colors = ["#77e0a5", "#f5b85c", "#67b7ff", "#d88cff", "#ff7d7d", "#d0dc73"
 type Props = {
   runs: RunDetail[];
   metric: string;
+  height?: number;
+  compact?: boolean;
 };
 
-export function MetricChart({ runs, metric }: Props) {
+export function MetricChart({ runs, metric, height = 360, compact = false }: Props) {
   const container = useRef<HTMLDivElement>(null);
+  const aligned = useMemo(() => alignMetric(runs, metric), [metric, runs]);
 
   useEffect(() => {
-    if (!container.current || runs.length === 0) return;
-    const aligned = alignMetric(runs, metric);
+    if (!container.current || aligned.x.length === 0) return;
     const chart = new uPlot(
       {
-        width: Math.max(520, container.current.clientWidth),
-        height: 360,
+        width: Math.max(260, container.current.clientWidth),
+        height,
         scales: { x: { time: false } },
         axes: [
-          { stroke: "#87929f", grid: { stroke: "#242b33" } },
-          { stroke: "#87929f", grid: { stroke: "#242b33" } },
+          {
+            stroke: "#87929f",
+            grid: { stroke: "#242b33" },
+            font: compact ? "10px ui-monospace" : "11px ui-monospace",
+          },
+          {
+            stroke: "#87929f",
+            grid: { stroke: "#242b33" },
+            font: compact ? "10px ui-monospace" : "11px ui-monospace",
+          },
         ],
+        cursor: { show: !compact },
         series: [
           { label: "step" },
           ...runs.map((run, index) => ({
-            label: `${run.config.objective.kind} · seed ${run.id.split("-").at(-1)}`,
+            label: run.config.objective.kind + " · seed " + (run.id.split("-").at(-1) ?? "unknown"),
             stroke: colors[index % colors.length],
-            width: 2,
+            width: compact ? 1.5 : 2,
             spanGaps: true,
           })),
         ],
@@ -41,17 +52,28 @@ export function MetricChart({ runs, metric }: Props) {
       container.current,
     );
     const resize = new ResizeObserver(([entry]) => {
-      chart.setSize({ width: Math.max(520, entry.contentRect.width), height: 360 });
+      chart.setSize({ width: Math.max(260, entry.contentRect.width), height });
     });
     resize.observe(container.current);
     return () => {
       resize.disconnect();
       chart.destroy();
     };
-  }, [metric, runs]);
+  }, [aligned, compact, height, runs]);
 
   if (runs.length === 0) {
-    return <div className="chart-empty">比較する run を選択してください。</div>;
+    return (
+      <div className="chart-empty" style={{ minHeight: height }}>
+        比較する run を選択してください。
+      </div>
+    );
   }
-  return <div className="chart" ref={container} />;
+  if (aligned.x.length === 0) {
+    return (
+      <div className="chart-empty" style={{ minHeight: height }}>
+        このメトリクスはまだ記録されていません。
+      </div>
+    );
+  }
+  return <div className={compact ? "chart compact" : "chart"} ref={container} />;
 }
