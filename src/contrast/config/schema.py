@@ -24,10 +24,16 @@ class AugmentationConfig(FrozenModel):
     grayscale_probability: float = Field(default=0.2, ge=0.0, le=1.0)
 
 
+class HuggingFaceDataConfig(FrozenModel):
+    repo_id: str = "uoft-cs/cifar100"
+    revision: str = "aadb3af77e9048adbea6b47c21a81e47dd092ae5"
+
+
 class DataConfig(FrozenModel):
     name: Literal["cifar100"] = "cifar100"
     root: Path = Path("data")
     download: bool = True
+    huggingface: HuggingFaceDataConfig = HuggingFaceDataConfig()
     validation_fraction: float = Field(default=0.1, ge=0.0, lt=1.0)
     num_workers: int = Field(default=4, ge=0)
     pin_memory: bool = True

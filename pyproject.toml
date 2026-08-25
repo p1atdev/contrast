@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.116,<1",
+    "huggingface-hub>=0.34,<2",
     "numpy>=2,<3",
+    "pillow>=11,<13",
+    "pyarrow>=20,<24",
     "pydantic>=2.11,<3",
     "schedulefree>=1.4,<2",
     "torch>=2.7,<3",

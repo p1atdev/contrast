@@ -14,6 +14,10 @@ validation_fraction = 0.1
 num_workers = 4
 pin_memory = true
 
+[data.huggingface]
+repo_id = "uoft-cs/cifar100"
+revision = "aadb3af77e9048adbea6b47c21a81e47dd092ae5"
+
 [data.augmentation]
 crop_padding = 4
 horizontal_flip_probability = 0.5

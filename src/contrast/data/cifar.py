@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import hashlib
-import pickle
 import random
-import tarfile
-import urllib.request
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
-from typing import Any
 
 import numpy as np
+import pyarrow.parquet as parquet
 import torch
+from huggingface_hub import hf_hub_download
+from PIL import Image
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, Sampler, Subset
@@ -18,32 +17,66 @@ from torch.utils.data import DataLoader, Dataset, Sampler, Subset
 from contrast.config.schema import ExperimentConfig
 from contrast.runtime.context import RuntimeContext
 
-_CIFAR_URL = "https://www.cs.toronto.edu/~kriz/cifar-100-python.tar.gz"
-_CIFAR_MD5 = "eb9058c3a382ffc7106e4002c42a8d85"
+_HF_FILES = {
+    "train": "cifar100/train-00000-of-00001.parquet",
+    "test": "cifar100/test-00000-of-00001.parquet",
+}
 _MEAN = torch.tensor((0.5071, 0.4867, 0.4408)).view(3, 1, 1)
 _STD = torch.tensor((0.2675, 0.2565, 0.2761)).view(3, 1, 1)
+_TENSOR_CACHE: dict[tuple[Path, str, str, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
 
-def _md5(path: Path) -> str:
-    digest = hashlib.md5(usedforsecurity=False)
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def _load_huggingface(
+    root: Path,
+    split: str,
+    download: bool,
+    repo: str,
+    revision: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if split not in _HF_FILES:
+        raise ValueError(f"unsupported CIFAR-100 split: {split}")
+    cache_key = (root.resolve(), repo, revision, split)
+    if cache_key in _TENSOR_CACHE:
+        return _TENSOR_CACHE[cache_key]
 
+    source_key = f"{repo.replace('/', '--')}--{revision[:12]}"
+    converted = root / "processed" / source_key / f"{split}.pt"
+    if converted.exists():
+        payload = torch.load(converted, map_location="cpu", weights_only=True)
+        result = payload["images"], payload["labels"]
+        _TENSOR_CACHE[cache_key] = result
+        return result
 
-def _download_and_extract(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
-    archive = root / "cifar-100-python.tar.gz"
-    if not archive.exists() or _md5(archive) != _CIFAR_MD5:
-        temporary = archive.with_suffix(".download")
-        urllib.request.urlretrieve(_CIFAR_URL, temporary)
-        if _md5(temporary) != _CIFAR_MD5:
-            temporary.unlink(missing_ok=True)
-            raise RuntimeError("CIFAR-100 archive checksum mismatch")
-        temporary.replace(archive)
-    with tarfile.open(archive, "r:gz") as bundle:
-        bundle.extractall(root, filter="data")
+    parquet_path = hf_hub_download(
+        repo_id=repo,
+        filename=_HF_FILES[split],
+        repo_type="dataset",
+        revision=revision,
+        cache_dir=root / ".hf-cache",
+        local_files_only=not download,
+    )
+    table = parquet.read_table(parquet_path, columns=["img", "fine_label"])
+    records = table["img"].to_pylist()
+    images = torch.empty((len(records), 3, 32, 32), dtype=torch.uint8)
+    for index, record in enumerate(records):
+        encoded = record["bytes"]
+        if encoded is None:
+            raise ValueError("Hugging Face CIFAR-100 row did not contain encoded image bytes")
+        with Image.open(BytesIO(encoded)) as image:
+            array = np.asarray(image.convert("RGB"), dtype=np.uint8)
+        images[index].copy_(torch.from_numpy(array.copy()).permute(2, 0, 1))
+    labels = torch.from_numpy(
+        np.asarray(table["fine_label"].to_numpy(zero_copy_only=False), dtype=np.int64).copy()
+    )
+
+    converted.parent.mkdir(parents=True, exist_ok=True)
+    temporary = converted.with_suffix(".tmp")
+    torch.save({"images": images, "labels": labels}, temporary)
+    temporary.replace(converted)
+    result = images, labels
+    _TENSOR_CACHE[cache_key] = result
+    return result
 
 
 class TensorAugment(nn.Module):
@@ -104,18 +137,16 @@ class Cifar100Dataset(Dataset[tuple[torch.Tensor, int, int]]):
         seed: int,
         augment: TensorAugment | None,
         download: bool,
+        huggingface_repo: str,
+        huggingface_revision: str,
     ) -> None:
-        directory = root / "cifar-100-python"
-        if not directory.exists():
-            if not download:
-                raise FileNotFoundError(f"CIFAR-100 was not found under {root}")
-            _download_and_extract(root)
-        with (directory / split).open("rb") as stream:
-            payload: dict[bytes, Any] = pickle.load(stream, encoding="bytes")
-        self.images = torch.from_numpy(
-            np.asarray(payload[b"data"], dtype=np.uint8).reshape(-1, 3, 32, 32)
+        self.images, self.labels = _load_huggingface(
+            root,
+            split,
+            download,
+            huggingface_repo,
+            huggingface_revision,
         )
-        self.labels = torch.tensor(payload[b"fine_labels"], dtype=torch.long)
         self.views = views
         self.seed = seed
         self.augment = augment
@@ -129,7 +160,9 @@ class Cifar100Dataset(Dataset[tuple[torch.Tensor, int, int]]):
         rendered = []
         for view in range(self.views):
             generator = torch.Generator()
-            generator.manual_seed(self.seed + epoch * len(self) * self.views + index * self.views + view)
+            generator.manual_seed(
+                self.seed + epoch * len(self) * self.views + index * self.views + view
+            )
             if self.augment is None:
                 rendered.append((image.float() / 255.0 - _MEAN) / _STD)
             else:
@@ -175,7 +208,9 @@ class EpochBatchSampler(Sampler[list[tuple[int, int]]]):
         return (size + self.local_batch_size - 1) // self.local_batch_size
 
 
-def _stratified_split(labels: torch.Tensor, fraction: float, seed: int) -> tuple[list[int], list[int]]:
+def _stratified_split(
+    labels: torch.Tensor, fraction: float, seed: int
+) -> tuple[list[int], list[int]]:
     if not fraction:
         return list(range(labels.numel())), []
     by_class: dict[int, list[int]] = {}
@@ -215,6 +250,8 @@ def build_cifar100_loaders(config: ExperimentConfig, runtime: RuntimeContext) ->
         config.run.seed,
         augmentation,
         config.data.download,
+        config.data.huggingface.repo_id,
+        config.data.huggingface.revision,
     )
     evaluation_train = Cifar100Dataset(
         config.data.root,
@@ -223,6 +260,8 @@ def build_cifar100_loaders(config: ExperimentConfig, runtime: RuntimeContext) ->
         config.run.seed,
         None,
         False,
+        config.data.huggingface.repo_id,
+        config.data.huggingface.revision,
     )
     test_dataset = Cifar100Dataset(
         config.data.root,
@@ -231,6 +270,8 @@ def build_cifar100_loaders(config: ExperimentConfig, runtime: RuntimeContext) ->
         config.run.seed,
         None,
         config.data.download,
+        config.data.huggingface.repo_id,
+        config.data.huggingface.revision,
     )
     train_indices, validation_indices = _stratified_split(
         train_dataset.labels,

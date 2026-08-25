@@ -9,6 +9,8 @@ from contrast.config.loader import load_experiment_config
 def test_objective_override_replaces_discriminated_table() -> None:
     config = load_experiment_config(Path("configs/objectives/sigmoid_supcon.toml"))
     assert config.objective.kind == "sigmoid_supcon"
+    assert config.data.huggingface.repo_id == "uoft-cs/cifar100"
+    assert len(config.data.huggingface.revision) == 40
     assert config.objective.scale_init == 10.0
 
 
