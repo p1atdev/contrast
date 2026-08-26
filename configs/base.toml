@@ -92,7 +92,7 @@ cudnn_benchmark = false
 
 [training]
 epochs = 400
-step_strategy = "grad_cache"
+step_strategy = "direct"
 log_every_steps = 20
 evaluate_every_epochs = 20
 checkpoint_every_epochs = 50

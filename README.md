@@ -64,7 +64,7 @@ uv run contrast sweep configs/sweeps/core_losses.toml
 
 既定はFP32 parameter、BF16 autocast、FP32 loss、TF32許可です。TF32自体は主に速度向上の設定で、activation memory削減はBF16 autocastが担います。同じGPU・ソフトウェア条件でseed、data order、viewごとのaugmentationを固定します。より強い決定性が必要なら`reproducibility.mode = "strict"`を指定できます。
 
-GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。RTX 4070 Ti SUPERでの実測に基づき、logical batch 256 sourceを固定したまま既定chunkを128 sourceにしています。別GPUでOOMする場合は`batch.grad_cache_chunk_size_per_rank`だけを下げます。
+GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。今回のViT-Tiny・logical batch 256 sourceはRTX 4070 Ti SUPER上でDirect実行が約2.8 GiBに収まり、GradCache 128 source chunkより約21%高速だったため、本sweepの既定は`step_strategy = "direct"`です。より大きなbatch/modelでOOMする場合は`"grad_cache"`へ切り替え、`batch.grad_cache_chunk_size_per_rank`を調整します。
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。optimizerの`weight_decay_policy = "standard"`はLinear/Conv等の行列weightだけをdecayし、bias、Norm、class token、position embedding、Sigmoid lossのscalar parameterを除外します。旧single-group optimizer checkpointはresume時に新しいgroupへ移行します。非有限lossまたはgradientはそのstepで即座に例外にします。
 
