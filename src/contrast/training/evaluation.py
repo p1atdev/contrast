@@ -179,7 +179,8 @@ def evaluate(
                 device,
                 config.linear_probe,
             )
-            metrics["linear_probe/train_loss"] = final_loss
+            primary_query = next(iter(queries))
+            metrics[f"{primary_query}/linear_probe_train_loss"] = final_loss
             metrics.update(
                 {f"{name}/linear_probe_top1": accuracy for name, accuracy in accuracies.items()}
             )

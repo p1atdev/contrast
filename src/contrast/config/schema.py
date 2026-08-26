@@ -164,6 +164,63 @@ OptimizerConfig = Annotated[
 ]
 
 
+class ConstantEMADecayConfig(FrozenModel):
+    kind: Literal["constant"] = "constant"
+    decay: float = Field(default=0.999, ge=0.0, lt=1.0)
+
+
+class InterpolatedEMADecayConfig(FrozenModel):
+    start_decay: float = Field(default=0.9, ge=0.0, lt=1.0)
+    end_decay: float = Field(default=0.9999, ge=0.0, lt=1.0)
+    schedule_steps: PositiveInt = 10_000
+
+    @model_validator(mode="after")
+    def validate_decay_range(self) -> InterpolatedEMADecayConfig:
+        if self.end_decay < self.start_decay:
+            raise ValueError("EMA end decay must be greater than or equal to start decay")
+        return self
+
+
+class LinearEMADecayConfig(InterpolatedEMADecayConfig):
+    kind: Literal["linear"] = "linear"
+
+
+class CosineEMADecayConfig(InterpolatedEMADecayConfig):
+    kind: Literal["cosine"] = "cosine"
+
+
+class InversePowerEMADecayConfig(FrozenModel):
+    kind: Literal["inverse_power"] = "inverse_power"
+    min_decay: float = Field(default=0.0, ge=0.0, lt=1.0)
+    max_decay: float = Field(default=0.9999, ge=0.0, lt=1.0)
+    inv_gamma: float = Field(default=1.0, gt=0.0)
+    power: float = Field(default=2.0 / 3.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_decay_range(self) -> InversePowerEMADecayConfig:
+        if self.max_decay < self.min_decay:
+            raise ValueError("EMA max decay must be greater than or equal to min decay")
+        return self
+
+
+EMADecayConfig = Annotated[
+    ConstantEMADecayConfig
+    | LinearEMADecayConfig
+    | CosineEMADecayConfig
+    | InversePowerEMADecayConfig,
+    Field(discriminator="kind"),
+]
+
+
+class EMAConfig(FrozenModel):
+    enabled: bool = False
+    start_step: int = Field(default=0, ge=0)
+    update_every_steps: PositiveInt = 1
+    buffer_mode: Literal["copy", "ema"] = "copy"
+    evaluation_weights: Literal["raw", "ema", "both"] = "both"
+    decay: EMADecayConfig = InversePowerEMADecayConfig()
+
+
 class PrecisionConfig(FrozenModel):
     parameter_dtype: Literal["float32"] = "float32"
     autocast_dtype: Literal["none", "bfloat16", "float16"] = "bfloat16"
@@ -224,6 +281,7 @@ class ExperimentConfig(FrozenModel):
     model: ModelConfig = ModelConfig()
     objective: ObjectiveConfig = SupConObjectiveConfig()
     optimizer: OptimizerConfig = AdamWScheduleFreeOptimizerConfig()
+    ema: EMAConfig = EMAConfig()
     precision: PrecisionConfig = PrecisionConfig()
     reproducibility: ReproducibilityConfig = ReproducibilityConfig()
     training: TrainingConfig = TrainingConfig()

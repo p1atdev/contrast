@@ -22,6 +22,7 @@ from contrast.reproducibility import seed_everything
 from contrast.runtime import PrecisionManager, RuntimeContext
 from contrast.tracking import RunStore
 from contrast.training import Trainer
+from contrast.training.ema import ExponentialMovingAverage
 from contrast.training.evaluation import evaluate
 
 
@@ -90,18 +91,50 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
         data = build_cifar100_loaders(config, runtime)
         model = build_model(config.model).to(runtime.device)
         model.load_state_dict(state["model"])
+        ema = None
+        if config.ema.enabled:
+            if state.get("ema") is None:
+                raise ValueError("checkpoint config enables EMA but contains no EMA state")
+            ema = ExponentialMovingAverage(model, config.ema)
+            ema.load_state_dict(state["ema"])
         query_loaders = {"eval": data.validation or data.test}
         if config.evaluation.test_at_end:
             query_loaders["test"] = data.test
-        metrics = evaluate(
-            model,
-            data.memory,
-            query_loaders,
-            runtime.device,
-            precision,
-            config.evaluation,
-            include_linear_probe=True,
-        )
+        evaluation_weights = config.ema.evaluation_weights if ema is not None else "raw"
+        metrics: dict[str, float] = {}
+        if evaluation_weights in {"raw", "both"}:
+            metrics.update(
+                evaluate(
+                    model,
+                    data.memory,
+                    query_loaders,
+                    runtime.device,
+                    precision,
+                    config.evaluation,
+                    include_linear_probe=True,
+                )
+            )
+        if ema is not None and ema.updates and evaluation_weights in {"ema", "both"}:
+            ema_query_loaders = {f"{name}_ema": loader for name, loader in query_loaders.items()}
+            metrics.update(
+                evaluate(
+                    ema.model,
+                    data.memory,
+                    ema_query_loaders,
+                    runtime.device,
+                    precision,
+                    config.evaluation,
+                    include_linear_probe=True,
+                )
+            )
+        if ema is not None:
+            metrics.update(
+                {
+                    "ema/decay": ema.decay,
+                    "ema/updates": float(ema.updates),
+                    "ema/ready": float(ema.updates > 0),
+                }
+            )
         store.log(
             {
                 "type": "offline_evaluation",

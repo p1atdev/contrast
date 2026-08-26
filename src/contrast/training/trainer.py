@@ -15,6 +15,7 @@ from contrast.reproducibility import capture_rng_state, restore_rng_state
 from contrast.runtime.context import RuntimeContext
 from contrast.runtime.precision import PrecisionManager
 from contrast.tracking.store import RunStore
+from contrast.training.ema import ExponentialMovingAverage
 from contrast.training.evaluation import evaluate
 from contrast.training.optimization import OptimizationController
 from contrast.training.steps import DirectStep, GradCacheStep, prepare_batch
@@ -43,6 +44,7 @@ class Trainer:
             steps = min(steps, config.training.max_steps)
         parameters = chain(self.model.parameters(), self.objective.parameters())
         self.optimization = OptimizationController(config.optimizer, parameters, steps)
+        self.ema = ExponentialMovingAverage(self.model, config.ema) if config.ema.enabled else None
         self.strategy = (
             GradCacheStep(
                 precision,
@@ -55,8 +57,13 @@ class Trainer:
         self.global_step = 0
 
     def load_checkpoint(self, path: str | Path) -> None:
-        state = torch.load(path, map_location=self.runtime.device, weights_only=False)
+        state = torch.load(path, map_location="cpu", weights_only=False)
         self.model.load_state_dict(state["model"])
+        if self.ema is not None:
+            if state.get("ema") is None:
+                self.ema.reset(self.model)
+            else:
+                self.ema.load_state_dict(state["ema"])
         self.objective.load_state_dict(state["objective"])
         self.optimization.load_state_dict(state["optimization"])
         restore_rng_state(state["rng"])
@@ -75,6 +82,7 @@ class Trainer:
                     "epoch": self.epoch,
                     "global_step": self.global_step,
                     "config": self.config.model_dump(mode="json"),
+                    "ema": self.ema.state_dict() if self.ema is not None else None,
                 },
                 name,
             )
@@ -107,6 +115,9 @@ class Trainer:
             scaler = self.precision.scaler if self.precision.uses_scaler else None
             self.optimization.step(scaler)
             self.global_step += 1
+            ema_updated = (
+                self.ema.update(self.model, self.global_step) if self.ema is not None else False
+            )
 
             if self.global_step % self.config.training.log_every_steps == 0:
                 elapsed = time.perf_counter() - started
@@ -129,6 +140,10 @@ class Trainer:
                     metrics["optimization/gradient_was_clipped"] = float(
                         gradient_norm_value > self.config.training.gradient_clip_norm
                     )
+                if self.ema is not None:
+                    metrics["ema/decay"] = self.ema.decay
+                    metrics["ema/updates"] = self.ema.updates
+                    metrics["ema/updated"] = float(ema_updated)
                 metrics.update({key: float(value) for key, value in result.metrics.items()})
                 self.store.log(metrics)
                 if self.runtime.is_primary:
@@ -143,15 +158,43 @@ class Trainer:
         query_loaders = {"eval": self.data.validation or self.data.test}
         if final and self.config.evaluation.test_at_end:
             query_loaders["test"] = self.data.test
+        evaluation_weights = self.config.ema.evaluation_weights if self.ema is not None else "raw"
+        metrics: dict[str, float] = {}
         with self.optimization.evaluation_parameters():
-            metrics = evaluate(
-                self.model,
-                self.data.memory,
-                query_loaders,
-                self.runtime.device,
-                self.precision,
-                self.config.evaluation,
-                include_linear_probe=final,
+            if evaluation_weights in {"raw", "both"}:
+                metrics.update(
+                    evaluate(
+                        self.model,
+                        self.data.memory,
+                        query_loaders,
+                        self.runtime.device,
+                        self.precision,
+                        self.config.evaluation,
+                        include_linear_probe=final,
+                    )
+                )
+            if self.ema is not None and self.ema.updates and evaluation_weights in {"ema", "both"}:
+                ema_query_loaders = {
+                    f"{name}_ema": loader for name, loader in query_loaders.items()
+                }
+                metrics.update(
+                    evaluate(
+                        self.ema.model,
+                        self.data.memory,
+                        ema_query_loaders,
+                        self.runtime.device,
+                        self.precision,
+                        self.config.evaluation,
+                        include_linear_probe=final,
+                    )
+                )
+        if self.ema is not None:
+            metrics.update(
+                {
+                    "ema/decay": self.ema.decay,
+                    "ema/updates": float(self.ema.updates),
+                    "ema/ready": float(self.ema.updates > 0),
+                }
             )
         self.store.log(
             {

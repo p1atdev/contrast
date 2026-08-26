@@ -30,3 +30,15 @@ def test_dotted_override_is_validated() -> None:
     assert config.data.split_seed == 0
     assert config.batch.global_source_batch_size == 64
     assert config.evaluation.knn_spaces == ("backbone", "projector")
+
+
+def test_dotted_override_can_replace_ema_decay_schedule() -> None:
+    config = load_experiment_config(
+        "configs/base.toml",
+        ["ema.decay.kind=constant", "ema.decay.decay=0.95"],
+    )
+
+    assert config.ema.enabled
+    assert config.ema.evaluation_weights == "both"
+    assert config.ema.decay.kind == "constant"
+    assert config.ema.decay.decay == 0.95

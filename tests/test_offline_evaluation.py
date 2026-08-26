@@ -11,10 +11,12 @@ def test_legacy_checkpoint_uses_original_run_seed_for_split() -> None:
         "configs/base.toml",
         ["run.seed=7"],
     ).model_dump(mode="json")
+    del raw["ema"]
     del raw["data"]["split_seed"]
 
     config = _config_from_checkpoint({"config": raw})
 
+    assert not config.ema.enabled
     assert config.run.seed == 7
     assert config.data.split_seed == 7
 
@@ -28,6 +30,8 @@ def test_current_checkpoint_preserves_explicit_split_seed() -> None:
     config = _config_from_checkpoint({"config": raw})
 
     assert config.data.split_seed == 3
+
+    assert config.ema.enabled
 
 
 def test_evaluate_subcommand_accepts_checkpoint() -> None:

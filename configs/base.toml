@@ -65,6 +65,19 @@ eps = 1e-8
 weight_decay = 0.05
 warmup_steps = 500
 
+[ema]
+enabled = true
+start_step = 0
+update_every_steps = 1
+buffer_mode = "copy"
+evaluation_weights = "both"
+
+[ema.decay]
+kind = "inverse_power"
+min_decay = 0.0
+max_decay = 0.9999
+inv_gamma = 1.0
+power = 0.6666666666666666
 [precision]
 parameter_dtype = "float32"
 autocast_dtype = "bfloat16"

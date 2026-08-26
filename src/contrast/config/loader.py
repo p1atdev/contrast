@@ -57,7 +57,11 @@ def _apply_override(config: dict[str, Any], expression: str) -> None:
         if not isinstance(child, dict):
             raise ValueError(f"cannot assign through non-table key: {dotted_key}")
         target = child
-    target[keys[-1]] = _parse_override_value(raw_value)
+    key = keys[-1]
+    value = _parse_override_value(raw_value)
+    if key == "kind" and value != target.get("kind"):
+        target.clear()
+    target[key] = value
 
 
 def load_experiment_config(
