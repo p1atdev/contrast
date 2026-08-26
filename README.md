@@ -1,6 +1,6 @@
 # Contrast Lab
 
-PyTorchで教師あり対照学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、管理APIにFastAPIを使います。
+PyTorchで教師あり対照学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、dashboard APIにHonoとBunを使います。
 
 ## 比較の前提
 
@@ -132,18 +132,23 @@ uv run contrast evaluate --checkpoint runs/cifar100-core/<run>/checkpoints/final
 
 ## Dashboard
 
-学習メトリクスは各runの`metrics.jsonl`が正本です。React UIをbuildした後、APIとUIを同じプロセスから起動します。
-
-```bash
-uv run contrast serve --runs-dir runs
-```
-
-[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、通常モデルとEMAのbackbone/projector k-NN・frozen linear probe、EMA decay・update回数、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。UI開発時は別端末で次を実行します。
+学習メトリクスは各runの`metrics.jsonl`が正本です。Web側のHono APIがrunファイルを直接読むため、Python serverは不要です。UI開発時はViteからAPIと画面を同時に起動します。
 
 ```bash
 cd web
 bun run dev
 ```
+
+[http://127.0.0.1:5173](http://127.0.0.1:5173) で確認できます。本番相当ではReact UIをbuildし、Bun/HonoからAPIと静的ファイルを同じポートで配信します。
+
+```bash
+bun run build
+bun run serve
+```
+
+[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、通常モデルとEMAのbackbone/projector k-NN・frozen linear probe、EMA decay・update回数、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。
+
+既定ではrepository直下の`runs/`を読みます。変更する場合は`bun run serve --runs-dir /path/to/runs`を指定し、Viteでは`CONTRAST_RUNS_DIR=/path/to/runs bun run dev`を使います。
 
 ## Quality checks
 

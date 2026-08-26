@@ -190,19 +190,6 @@ def _sweep(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _serve(arguments: argparse.Namespace) -> int:
-    import uvicorn
-
-    from contrast.web.app import create_app
-
-    uvicorn.run(
-        create_app(Path(arguments.runs_dir)),
-        host=arguments.host,
-        port=arguments.port,
-    )
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="contrast")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -228,11 +215,6 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--dry-run", action="store_true")
     sweep.set_defaults(handler=_sweep)
 
-    serve = commands.add_parser("serve", help="serve the local run dashboard")
-    serve.add_argument("--runs-dir", default="runs")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8000)
-    serve.set_defaults(handler=_serve)
     return parser
 
 

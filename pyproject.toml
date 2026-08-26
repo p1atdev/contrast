@@ -5,7 +5,6 @@ description = "Reproducible supervised contrastive learning experiments"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.116,<1",
     "huggingface-hub>=0.34,<2",
     "numpy>=2,<3",
     "pillow>=11,<13",
@@ -13,7 +12,6 @@ dependencies = [
     "pydantic>=2.11,<3",
     "schedulefree>=1.4,<2",
     "torch>=2.7,<3",
-    "uvicorn>=0.35,<1",
 ]
 
 [project.scripts]

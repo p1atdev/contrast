@@ -7,14 +7,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "serve": "bun run server.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "lint": "oxlint src",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check ."
+    "lint": "oxlint src server server.ts vite.config.ts",
+    "format": "oxfmt --write src server server.ts vite.config.ts package.json tsconfig.json index.html",
+    "format:check": "oxfmt --check src server server.ts vite.config.ts package.json tsconfig.json index.html"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "hono": "^4.13.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "uplot": "^1.6.32",
