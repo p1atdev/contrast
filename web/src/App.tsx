@@ -42,6 +42,42 @@ const metrics: MetricDefinition[] = [
     description: "Final test accuracy of the same frozen-backbone probe",
   },
   {
+    value: "eval_ema/backbone_knn_top1",
+    label: "EMA backbone k-NN top-1",
+    group: "EMA REPRESENTATION",
+    description: "Validation k-NN on normalized EMA encoder features",
+  },
+  {
+    value: "eval_ema/projector_knn_top1",
+    label: "EMA projector k-NN top-1",
+    group: "EMA REPRESENTATION",
+    description: "Validation k-NN on normalized EMA projection-head embeddings",
+  },
+  {
+    value: "eval_ema/linear_probe_top1",
+    label: "EMA frozen linear probe",
+    group: "EMA REPRESENTATION",
+    description: "Final validation accuracy of a probe trained on the frozen EMA backbone",
+  },
+  {
+    value: "test_ema/backbone_knn_top1",
+    label: "EMA test backbone k-NN",
+    group: "EMA FINAL TEST",
+    description: "Final test k-NN accuracy on normalized EMA encoder features",
+  },
+  {
+    value: "test_ema/projector_knn_top1",
+    label: "EMA test projector k-NN",
+    group: "EMA FINAL TEST",
+    description: "Final test k-NN accuracy on normalized EMA projection-head embeddings",
+  },
+  {
+    value: "test_ema/linear_probe_top1",
+    label: "EMA test linear probe",
+    group: "EMA FINAL TEST",
+    description: "Final test accuracy of the frozen EMA-backbone probe",
+  },
+  {
     value: "eval/joint_classifier_top1",
     label: "Joint classifier top-1",
     group: "DIAGNOSTIC",
@@ -82,6 +118,18 @@ const metrics: MetricDefinition[] = [
     label: "Learning rate",
     group: "SCHEDULE",
     description: "Effective learning rate at each optimizer step",
+  },
+  {
+    value: "ema/decay",
+    label: "EMA decay",
+    group: "EMA SCHEDULE",
+    description: "Effective decay used by the latest EMA update",
+  },
+  {
+    value: "ema/updates",
+    label: "EMA updates",
+    group: "EMA SCHEDULE",
+    description: "Number of shadow-model updates completed",
   },
   {
     value: "eval/knn_top1",
@@ -296,6 +344,7 @@ export default function App() {
                     <th>Global batch</th>
                     <th>ViT</th>
                     <th>Precision</th>
+                    <th>EMA</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,6 +367,15 @@ export default function App() {
                       <td>
                         {run.config.precision.autocast_dtype}
                         {run.config.precision.allow_tf32 ? " + TF32" : ""}
+                      </td>
+                      <td>
+                        {run.config.ema
+                          ? (run.config.ema.enabled ? "on" : "off") +
+                            " / " +
+                            run.config.ema.evaluation_weights +
+                            " / " +
+                            run.config.ema.decay.kind
+                          : "legacy"}
                       </td>
                     </tr>
                   ))}

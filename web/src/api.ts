@@ -24,6 +24,13 @@ export type RunDetail = {
     batch: { global_source_batch_size: number; grad_cache_chunk_size_per_rank: number };
     model: { dim: number; depth: number; num_heads: number };
     precision: { autocast_dtype: string; allow_tf32: boolean };
+    ema?: {
+      enabled: boolean;
+      evaluation_weights: "raw" | "ema" | "both";
+      decay: {
+        kind: "constant" | "linear" | "cosine" | "inverse_power";
+      };
+    };
   };
   environment: Record<string, unknown>;
   metrics: MetricEvent[];

@@ -61,6 +61,57 @@ GradCacheはlogical batch全体の表現から一度だけ損失を計算し、c
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。
 
+## EMA
+
+モデルparameterのEMA（Exponential Moving Average）を任意で保持できます。更新式は
+`ema = decay * ema + (1 - decay) * model`で、最初の更新だけは学習中モデルをそのままcopyします。EMAはSchedule-Free optimizerが持つ評価用parameter viewとは独立したshadow modelです。Schedule-Free使用時の`raw`評価は従来どおりoptimizerのeval viewを使い、`ema`評価はoptimizer step後の学習中モデルから更新したEMAを使います。そのため、両者を同じrunで比較できます。
+
+共通設定は次のとおりです。`start_step`と`update_every_steps`はoptimizer step単位で、decay scheduleの経過も更新回数ではなくoptimizer stepで数えます。`buffer_mode = "copy"`はbufferを更新ごとにcopyし、`"ema"`は浮動小数・複素数bufferにもEMAを適用します（整数bufferは常にcopy）。ViTのLayerNormはrunning statisticsを持ちませんが、将来BatchNormを比較するときにも同じ設定を利用できます。
+
+```toml
+[ema]
+enabled = true
+start_step = 0
+update_every_steps = 1
+buffer_mode = "copy" # "copy" | "ema"
+evaluation_weights = "both" # "raw" | "ema" | "both"
+```
+
+decay scheduleは次の4種類から一つを選びます。`linear`と`cosine`は`start_decay`から`end_decay`まで`schedule_steps`で補間し、それ以降は`end_decay`を維持します。
+
+```toml
+[ema.decay]
+kind = "constant"
+decay = 0.999
+```
+
+```toml
+[ema.decay]
+kind = "linear"
+start_decay = 0.9
+end_decay = 0.9999
+schedule_steps = 10000
+```
+
+```toml
+[ema.decay]
+kind = "cosine"
+start_decay = 0.9
+end_decay = 0.9999
+schedule_steps = 10000
+```
+
+```toml
+[ema.decay]
+kind = "inverse_power"
+min_decay = 0.0
+max_decay = 0.9999
+inv_gamma = 1.0
+power = 0.6666666666666666
+```
+
+`evaluation_weights`は通常モデルだけを評価する`"raw"`、EMAだけを評価する`"ema"`、両方を評価する`"both"`から選びます。通常モデルの指標は`eval/*`と`test/*`、EMA指標は`eval_ema/*`と`test_ema/*`へ分けて記録されます。checkpointには通常モデルとEMA shadow、update回数、最新decayが保存され、resume後もschedule stateを復元します。`contrast evaluate --checkpoint ...`もcheckpointからEMAを復元し、保存済みconfigの`evaluation_weights`に従ってoffline評価します。EMAを有効にするとshadow model一つ分のparameter memoryが追加で必要です。
+
 ## 評価プロトコル
 
 `run.seed`はモデル初期化・data order・augmentationを制御し、train/validation分割は独立した`data.split_seed`で固定します。これにより、seed sweepで評価画像そのものが変わる交絡を避けます。
@@ -87,7 +138,7 @@ uv run contrast evaluate --checkpoint runs/cifar100-core/<run>/checkpoints/final
 uv run contrast serve --runs-dir runs
 ```
 
-[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、backbone/projector k-NN、frozen linear probe、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。UI開発時は別端末で次を実行します。
+[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、通常モデルとEMAのbackbone/projector k-NN・frozen linear probe、EMA decay・update回数、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。UI開発時は別端末で次を実行します。
 
 ```bash
 cd web
