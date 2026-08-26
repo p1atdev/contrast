@@ -7,5 +7,7 @@ configs = [
 ]
 
 [grid]
-"run.seed" = [0, 1, 2]
-"run.experiment" = ["cifar100-core-v2"]
+"run.seed" = [0]
+"run.experiment" = ["cifar100-core-v2-pilot"]
+"training.max_steps" = [1000]
+"evaluation.enabled" = [false]

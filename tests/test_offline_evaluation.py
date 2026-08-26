@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
-from contrast.cli import _config_from_checkpoint, build_parser
+import pytest
+from pydantic import ValidationError
+
+from contrast.cli import _config_from_checkpoint, _expand_sweep, build_parser
 from contrast.config.loader import load_experiment_config
 from contrast.tracking import RunStore
 
@@ -54,3 +57,29 @@ def test_existing_run_store_appends_without_reinitializing(tmp_path: Path) -> No
     event = json.loads((tmp_path / "metrics.jsonl").read_text())
     assert event["type"] == "offline_evaluation"
     assert event["step"] == 10
+
+
+def test_core_sweep_expands_seed_major() -> None:
+    runs = _expand_sweep(Path("configs/sweeps/core_losses.toml").resolve())
+
+    assert len(runs) == 15
+    expected_names = [
+        "ce.toml",
+        "ntxent.toml",
+        "supcon.toml",
+        "sincere.toml",
+        "sigmoid_supcon.toml",
+    ]
+    assert [path.name for path, _ in runs[:5]] == expected_names
+    assert all("run.seed=0" in overrides for _, overrides in runs[:5])
+    assert all("run.seed=1" in overrides for _, overrides in runs[5:10])
+    assert all('run.experiment="cifar100-core-v2"' in overrides for _, overrides in runs)
+
+
+def test_sweep_preflight_rejects_invalid_later_combination(tmp_path: Path) -> None:
+    base = Path("configs/base.toml").resolve()
+    sweep = tmp_path / "invalid.toml"
+    sweep.write_text(f'base = "{base}"\n\n[grid]\n"run.seed" = [0, 1]\n"model.unknown" = [true]\n')
+
+    with pytest.raises(ValidationError):
+        _expand_sweep(sweep)

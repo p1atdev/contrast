@@ -156,22 +156,45 @@ def _serialize_override(key: str, value: Any) -> str:
     return f"{key}={json.dumps(value, separators=(',', ':'))}"
 
 
-def _sweep(arguments: argparse.Namespace) -> int:
-    path = Path(arguments.sweep).resolve()
+def _expand_sweep(path: Path) -> list[tuple[Path, list[str]]]:
     with path.open("rb") as stream:
         specification = tomllib.load(stream)
-    config_paths = specification.get("configs", [specification.get("base")])
-    if not config_paths or config_paths == [None]:
-        raise ValueError("sweep requires either 'base' or 'configs'")
-    grid: dict[str, list[Any]] = specification["grid"]
+
+    config_values = specification.get("configs")
+    if config_values is None:
+        base = specification.get("base")
+        config_values = [base] if base is not None else []
+    if (
+        not isinstance(config_values, list)
+        or not config_values
+        or not all(isinstance(value, str) for value in config_values)
+    ):
+        raise ValueError("sweep requires a non-empty string 'base' or 'configs' list")
+
+    grid = specification.get("grid")
+    if not isinstance(grid, dict) or not grid:
+        raise ValueError("sweep requires a non-empty 'grid' table")
+    if any(not isinstance(values, list) or not values for values in grid.values()):
+        raise ValueError("every sweep grid value must be a non-empty array")
+
     keys = list(grid)
-    combinations = list(itertools.product(config_paths, *(grid[key] for key in keys)))
-    print(f"sweep combinations={len(combinations)}")
-    for index, values in enumerate(combinations, 1):
-        config_path = (path.parent / values[0]).resolve()
+    runs: list[tuple[Path, list[str]]] = []
+    for values in itertools.product(*(grid[key] for key in keys)):
         overrides = [
-            _serialize_override(key, value) for key, value in zip(keys, values[1:], strict=True)
+            _serialize_override(key, value) for key, value in zip(keys, values, strict=True)
         ]
+        for config_value in config_values:
+            config_path = (path.parent / config_value).resolve()
+            load_experiment_config(config_path, overrides)
+            runs.append((config_path, overrides))
+    return runs
+
+
+def _sweep(arguments: argparse.Namespace) -> int:
+    path = Path(arguments.sweep).resolve()
+    runs = _expand_sweep(path)
+    print(f"sweep combinations={len(runs)}")
+    for index, (config_path, overrides) in enumerate(runs, 1):
         command = [
             sys.executable,
             "-m",
@@ -182,7 +205,7 @@ def _sweep(arguments: argparse.Namespace) -> int:
             *itertools.chain.from_iterable(("--set", value) for value in overrides),
         ]
         print(
-            f"[{index}/{len(combinations)}] {config_path.name} {' '.join(overrides)}",
+            f"[{index}/{len(runs)}] {config_path.name} {' '.join(overrides)}",
             flush=True,
         )
         if not arguments.dry_run:

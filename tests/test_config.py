@@ -26,7 +26,11 @@ def test_unknown_config_key_is_rejected(tmp_path: Path) -> None:
 def test_dotted_override_is_validated() -> None:
     config = load_experiment_config(
         "configs/base.toml",
-        ["run.seed=7", "batch.global_source_batch_size=64"],
+        [
+            "run.seed=7",
+            "batch.global_source_batch_size=64",
+            "batch.grad_cache_chunk_size_per_rank=32",
+        ],
     )
     assert config.run.seed == 7
     assert config.data.split_seed == 0

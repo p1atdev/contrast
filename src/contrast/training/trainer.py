@@ -224,7 +224,11 @@ class Trainer:
                 (epoch + 1) % self.config.training.evaluate_every_epochs == 0 or is_final_epoch
             ):
                 self._evaluate(final=is_final_epoch)
-            if (epoch + 1) % self.config.training.checkpoint_every_epochs == 0:
+            if (
+                completed
+                and not is_final_epoch
+                and (epoch + 1) % self.config.training.checkpoint_every_epochs == 0
+            ):
                 self._checkpoint(f"epoch-{epoch + 1:04d}.pt")
             if not completed:
                 break

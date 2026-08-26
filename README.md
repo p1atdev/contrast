@@ -4,7 +4,7 @@ PyTorchで教師あり対照学習を条件統制して比較するための実�
 
 ## 比較の前提
 
-既定値はCIFAR-100、ViT-Tiny/4相当（dim 192、12 blocks、3 heads）、LayerNorm、GELU、eager attentionです。global source batch、view数、augmentation、optimizer、precisionを固定し、`objective`だけを差し替えられます。
+既定値はCIFAR-100、ViT-Tiny/4相当（dim 192、12 blocks、3 heads）、LayerNorm、GELU、PyTorch SDPAです。global source batch、view数、augmentation、optimizer、precisionを固定し、`objective`だけを差し替えられます。
 
 実装済みの損失は以下です。
 
@@ -15,7 +15,7 @@ PyTorchで教師あり対照学習を条件統制して比較するための実�
 - Sigmoid-SupCon（SigLIP型のpairwise sigmoidを、同一クラスをpositiveとする多positive設定へ拡張）
 - Cross-Entropy + SupCon
 
-Sigmoid-SupConは画像・テキストの二塔SigLIPそのものではありません。ほかの画像単塔損失とモデル条件を揃えるため、SigLIPのpairwise sigmoid設計を教師ありpositive maskへ適用しています。
+Sigmoid-SupConは画像・テキストの二塔SigLIPそのものではありません。ほかの画像単塔損失とモデル条件を揃えるため、SigLIPのpairwise sigmoid設計を教師ありpositive maskへ適用しています。複数positiveへの拡張では、各anchorのvalid pair loss和をpositive数で割ってからanchor平均します。これは[公式SigLIP実装のpositive数による正規化方針](https://github.com/google-research/big_vision/blob/main/big_vision/trainers/proj/image_text/siglip.py#L287-L308)を複数positiveへ一般化したものです。SINCEREも論文の式に従い、positive pair全体ではなく各anchorのpositive平均を等しく平均します。
 
 ## Dataset
 
@@ -46,7 +46,14 @@ uv run contrast train -c configs/experiments/smoke.toml
 uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
 ```
 
-損失5種 × seed 3種の逐次sweepは次のコマンドです。最初に`--dry-run`で展開結果を確認できます。
+本番前に、5損失をseed 0で各1,000 optimizer stepだけ動かすpilotを実行します。lossの有限性、gradient clipping率、throughput、Sigmoidのscale/biasをDashboardで確認します。
+
+```bash
+uv run contrast sweep configs/sweeps/core_losses_pilot.toml --dry-run
+uv run contrast sweep configs/sweeps/core_losses_pilot.toml
+```
+
+pilot確認後、損失5種 × seed 3種の本sweepを実行します。sweepは起動前に全組合せを設定検証し、seedごとに5損失を順番に実行します。結果は既存runと分離した`runs/cifar100-core-v2/`へ保存されます。
 
 ```bash
 uv run contrast sweep configs/sweeps/core_losses.toml --dry-run
@@ -57,9 +64,11 @@ uv run contrast sweep configs/sweeps/core_losses.toml
 
 既定はFP32 parameter、BF16 autocast、FP32 loss、TF32許可です。TF32自体は主に速度向上の設定で、activation memory削減はBF16 autocastが担います。同じGPU・ソフトウェア条件でseed、data order、viewごとのaugmentationを固定します。より強い決定性が必要なら`reproducibility.mode = "strict"`を指定できます。
 
-GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。
+GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。RTX 4070 Ti SUPERでの実測に基づき、logical batch 256 sourceを固定したまま既定chunkを128 sourceにしています。別GPUでOOMする場合は`batch.grad_cache_chunk_size_per_rank`だけを下げます。
 
-Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。
+Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。optimizerの`weight_decay_policy = "standard"`はLinear/Conv等の行列weightだけをdecayし、bias、Norm、class token、position embedding、Sigmoid lossのscalar parameterを除外します。旧single-group optimizer checkpointはresume時に新しいgroupへ移行します。非有限lossまたはgradientはそのstepで即座に例外にします。
+
+本sweepはraw/EMA評価を20 epochごと、途中checkpointを50 epochごとに実行し、最終epochでは`final.pt`だけを保存します。
 
 ## EMA
 
@@ -116,7 +125,9 @@ power = 0.6666666666666666
 
 `run.seed`はモデル初期化・data order・augmentationを制御し、train/validation分割は独立した`data.split_seed`で固定します。これにより、seed sweepで評価画像そのものが変わる交絡を避けます。
 
-学習中は10 epochごとに次の2種類のk-NNを記録します。どちらも比較前にL2 normalizeします。
+CIFAR-100はstratified split後もtrainが各class 450枚で均衡しているため、train samplerはreplacementなしのepoch permutationを使います。`WeightedRandomSampler`は同一画像の重複・epoch内未使用画像を生み、batch内のclass均衡も保証しないため既定にはしません。class-balanced batchはpositive/negative構成そのものを変えるので、必要なら別sampler ablationとして扱います。
+
+学習中は20 epochごとに次の2種類のk-NNを記録します。どちらも比較前にL2 normalizeします。
 
 - `eval/backbone_knn_top1`: encoder feature上のk-NN。全objectiveで同じ意味を持つ主要指標
 - `eval/projector_knn_top1`: projection head出力上のk-NN。損失が直接最適化する空間の診断指標

@@ -28,7 +28,7 @@ grayscale_probability = 0.2
 [batch]
 global_source_batch_size = 256
 views = 2
-grad_cache_chunk_size_per_rank = 32
+grad_cache_chunk_size_per_rank = 128
 
 [model]
 name = "vit"
@@ -45,7 +45,7 @@ attention_dropout = 0.0
 [model.layers]
 normalization = "layer_norm"
 activation = "gelu"
-attention = "eager"
+attention = "sdpa"
 norm_position = "pre"
 norm_eps = 1e-6
 
@@ -63,6 +63,7 @@ lr = 0.001
 betas = [0.9, 0.999]
 eps = 1e-8
 weight_decay = 0.05
+weight_decay_policy = "standard"
 warmup_steps = 500
 
 [ema]
@@ -93,8 +94,8 @@ cudnn_benchmark = false
 epochs = 400
 step_strategy = "grad_cache"
 log_every_steps = 20
-evaluate_every_epochs = 10
-checkpoint_every_epochs = 10
+evaluate_every_epochs = 20
+checkpoint_every_epochs = 50
 gradient_clip_norm = 1.0
 
 [evaluation]
