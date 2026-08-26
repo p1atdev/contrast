@@ -22,6 +22,19 @@ def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     return selected.mean()
 
 
+def _mean_normalized_anchor_loss(
+    values: torch.Tensor,
+    selected: torch.Tensor,
+    normalization_counts: torch.Tensor,
+) -> torch.Tensor:
+    active = normalization_counts > 0
+    if not bool(active.any()):
+        raise ValueError("objective received no active anchors")
+    per_anchor = torch.where(selected, values, 0.0).sum(dim=1)
+    per_anchor = per_anchor[active] / normalization_counts[active]
+    return per_anchor.mean()
+
+
 class CrossEntropyObjective(Objective):
     def forward(self, output: ModelOutput, metadata: ObjectiveMetadata) -> ObjectiveResult:
         loss = F.cross_entropy(output.logits.float(), metadata.labels)
@@ -79,12 +92,13 @@ class SincereObjective(Objective):
             dim=1,
         )
         pair_losses = torch.logaddexp(similarities, negative_lse[:, None]) - similarities
-        loss = _masked_mean(pair_losses, positives)
+        positive_counts = positives.sum(dim=1)
+        loss = _mean_normalized_anchor_loss(pair_losses, positives, positive_counts)
         return ObjectiveResult(
             loss,
             {
                 "loss/sincere": loss.detach(),
-                "pairs/positive_per_anchor": positives.sum(1).float().mean().detach(),
+                "pairs/positive_per_anchor": positive_counts.float().mean().detach(),
             },
         )
 
@@ -119,13 +133,15 @@ class SigmoidSupConObjective(Objective):
         pair_losses = F.softplus(-signs * logits)
         positive_loss = _masked_mean(pair_losses, positives)
         negative_loss = _masked_mean(pair_losses, negatives)
-        loss = pair_losses.masked_select(valid).sum() / embeddings.shape[0]
+        positive_counts = positives.sum(dim=1)
+        loss = _mean_normalized_anchor_loss(pair_losses, valid, positive_counts)
         return ObjectiveResult(
             loss,
             {
                 "loss/sigmoid": loss.detach(),
                 "loss/sigmoid_positive": positive_loss.detach(),
                 "loss/sigmoid_negative": negative_loss.detach(),
+                "pairs/positive_per_anchor": positive_counts.float().mean().detach(),
                 "sigmoid/scale": scale.detach(),
                 "sigmoid/bias": self.bias.detach(),
             },

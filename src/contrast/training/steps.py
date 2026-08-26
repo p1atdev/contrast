@@ -61,6 +61,8 @@ class DirectStep:
         with self.precision.autocast():
             output = model(batch.images)
         result = objective(output, batch.metadata)
+        if not bool(torch.isfinite(result.loss.detach())):
+            raise FloatingPointError("objective returned a non-finite loss")
         if self.precision.uses_scaler:
             self.precision.scaler.scale(result.loss).backward()
         else:
@@ -101,6 +103,8 @@ class GradCacheStep:
             logits=torch.cat([item.logits for item in cached]).detach().requires_grad_(),
         )
         result = objective(leaves, batch.metadata)
+        if not bool(torch.isfinite(result.loss.detach())):
+            raise FloatingPointError("objective returned a non-finite loss")
         result.loss.backward()
 
         gradients = {

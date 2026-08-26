@@ -30,6 +30,8 @@ class VisionTransformer(nn.Module):
         self.patch_embed = nn.Conv2d(3, dim, kernel_size=patch_size, stride=patch_size)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, dim))
         self.position_embedding = nn.Parameter(torch.zeros(1, patch_count + 1, dim))
+        self.cls_token._no_weight_decay = True
+        self.position_embedding._no_weight_decay = True
         self.input_dropout = nn.Dropout(dropout)
 
         def norm_factory() -> nn.Module:

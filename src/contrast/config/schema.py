@@ -146,6 +146,7 @@ class AdamWOptimizerConfig(FrozenModel):
     betas: tuple[float, float] = (0.9, 0.999)
     eps: float = Field(default=1e-8, gt=0.0)
     weight_decay: float = Field(default=0.05, ge=0.0)
+    weight_decay_policy: Literal["all", "standard"] = "standard"
     scheduler: CosineSchedulerConfig = CosineSchedulerConfig()
 
 
@@ -155,6 +156,7 @@ class AdamWScheduleFreeOptimizerConfig(FrozenModel):
     betas: tuple[float, float] = (0.9, 0.999)
     eps: float = Field(default=1e-8, gt=0.0)
     weight_decay: float = Field(default=0.05, ge=0.0)
+    weight_decay_policy: Literal["all", "standard"] = "standard"
     warmup_steps: int = Field(default=500, ge=0)
 
 

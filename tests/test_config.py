@@ -12,6 +12,8 @@ def test_objective_override_replaces_discriminated_table() -> None:
     assert config.data.huggingface.repo_id == "uoft-cs/cifar100"
     assert len(config.data.huggingface.revision) == 40
     assert config.objective.scale_init == 10.0
+    assert config.objective.bias_init == -10.0
+    assert config.optimizer.weight_decay_policy == "standard"
 
 
 def test_unknown_config_key_is_rejected(tmp_path: Path) -> None:

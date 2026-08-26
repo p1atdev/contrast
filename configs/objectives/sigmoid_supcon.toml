@@ -3,4 +3,4 @@ extends = "../base.toml"
 [objective]
 kind = "sigmoid_supcon"
 scale_init = 10.0
-bias_init = "auto"
+bias_init = -10.0

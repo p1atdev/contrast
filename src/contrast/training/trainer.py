@@ -42,8 +42,14 @@ class Trainer:
         steps = len(data.train) * config.training.epochs
         if config.training.max_steps is not None:
             steps = min(steps, config.training.max_steps)
-        parameters = chain(self.model.parameters(), self.objective.parameters())
-        self.optimization = OptimizationController(config.optimizer, parameters, steps)
+        named_parameters = chain(
+            ((f"model.{name}", parameter) for name, parameter in self.model.named_parameters()),
+            (
+                (f"objective.{name}", parameter)
+                for name, parameter in self.objective.named_parameters()
+            ),
+        )
+        self.optimization = OptimizationController(config.optimizer, named_parameters, steps)
         self.ema = ExponentialMovingAverage(self.model, config.ema) if config.ema.enabled else None
         self.strategy = (
             GradCacheStep(
@@ -102,16 +108,14 @@ class Trainer:
             prepared = prepare_batch(raw_batch, self.runtime.device)
             self.optimization.zero_grad()
             result = self.strategy.backward(self.model, self.objective, prepared)
-            if self.config.training.gradient_clip_norm is not None:
-                if self.precision.uses_scaler:
-                    self.precision.scaler.unscale_(self.optimization.optimizer)
-                parameters = chain(self.model.parameters(), self.objective.parameters())
-                gradient_norm = torch.nn.utils.clip_grad_norm_(
-                    parameters,
-                    self.config.training.gradient_clip_norm,
-                )
-            else:
-                gradient_norm = torch.tensor(float("nan"))
+            if self.precision.uses_scaler:
+                self.precision.scaler.unscale_(self.optimization.optimizer)
+            parameters = chain(self.model.parameters(), self.objective.parameters())
+            gradient_norm = torch.nn.utils.clip_grad_norm_(
+                parameters,
+                self.config.training.gradient_clip_norm or float("inf"),
+                error_if_nonfinite=True,
+            )
             scaler = self.precision.scaler if self.precision.uses_scaler else None
             self.optimization.step(scaler)
             self.global_step += 1
