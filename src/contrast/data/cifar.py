@@ -276,7 +276,7 @@ def build_cifar100_loaders(config: ExperimentConfig, runtime: RuntimeContext) ->
     train_indices, validation_indices = _stratified_split(
         train_dataset.labels,
         config.data.validation_fraction,
-        config.run.seed,
+        config.data.split_seed,
     )
     batch_sampler = EpochBatchSampler(
         train_indices,

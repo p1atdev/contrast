@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from contrast.data import cifar
-from contrast.data.cifar import TensorAugment
+from contrast.data.cifar import TensorAugment, _stratified_split
 
 
 def test_tensor_augmentation_is_generator_deterministic() -> None:
@@ -53,3 +53,18 @@ def test_huggingface_parquet_is_converted_and_cached(tmp_path, monkeypatch) -> N
     )
     torch.testing.assert_close(cached_images, images)
     torch.testing.assert_close(cached_labels, labels)
+
+
+def test_stratified_split_is_deterministic_for_its_own_seed() -> None:
+    labels = torch.arange(4).repeat_interleave(10)
+
+    first_train, first_validation = _stratified_split(labels, 0.2, seed=13)
+    second_train, second_validation = _stratified_split(labels, 0.2, seed=13)
+    _, other_validation = _stratified_split(labels, 0.2, seed=14)
+
+    assert first_train == second_train
+    assert first_validation == second_validation
+    assert first_validation != other_validation
+    assert len(first_train) == 32
+    assert len(first_validation) == 8
+    assert torch.bincount(labels[first_validation], minlength=4).tolist() == [2, 2, 2, 2]

@@ -61,6 +61,24 @@ GradCacheはlogical batch全体の表現から一度だけ損失を計算し、c
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。
 
+## 評価プロトコル
+
+`run.seed`はモデル初期化・data order・augmentationを制御し、train/validation分割は独立した`data.split_seed`で固定します。これにより、seed sweepで評価画像そのものが変わる交絡を避けます。
+
+学習中は10 epochごとに次の2種類のk-NNを記録します。どちらも比較前にL2 normalizeします。
+
+- `eval/backbone_knn_top1`: encoder feature上のk-NN。全objectiveで同じ意味を持つ主要指標
+- `eval/projector_knn_top1`: projection head出力上のk-NN。損失が直接最適化する空間の診断指標
+
+最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。`test_at_end = true`なら同じprobeで`test/linear_probe_top1`も最終時だけ計測します。
+
+`eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失単独ではclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。
+既存checkpointにも同じ評価を後付けできます。checkpointが元runの`checkpoints/`内にあればrun directoryは自動推定され、結果はそのrunの`metrics.jsonl`へ追記されます。移動したcheckpointには`--run-dir`を指定します。GPUを学習runと共有するため、同じGPUでの学習中ではなく停止後または完了後に実行してください。
+
+```bash
+uv run contrast evaluate --checkpoint runs/cifar100-core/<run>/checkpoints/final.pt
+```
+
 ## Dashboard
 
 学習メトリクスは各runの`metrics.jsonl`が正本です。React UIをbuildした後、APIとUIを同じプロセスから起動します。
@@ -69,7 +87,7 @@ Schedule-Freeでは学習時と評価時のparameter viewが異なるため、�
 uv run contrast serve --runs-dir runs
 ```
 
-[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、stepを揃えたloss、k-NN、classifier accuracy、learning rateと主要なresolved configを比較できます。UI開発時は別端末で次を実行します。
+[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、backbone/projector k-NN、frozen linear probe、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。UI開発時は別端末で次を実行します。
 
 ```bash
 cd web

@@ -17,6 +17,8 @@ export type RunSummary = {
 export type RunDetail = {
   id: string;
   config: {
+    run: { seed: number };
+    data: { split_seed?: number };
     objective: { kind: string };
     optimizer: { kind: string; lr: number };
     batch: { global_source_batch_size: number; grad_cache_chunk_size_per_rank: number };

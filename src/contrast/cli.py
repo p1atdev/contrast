@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import itertools
 import json
 import subprocess
@@ -9,9 +10,11 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+import torch
 from pydantic import ValidationError
 
 from contrast.config.loader import canonical_config_json, load_experiment_config
+from contrast.config.schema import ExperimentConfig
 from contrast.data import build_cifar100_loaders
 from contrast.models import build_model
 from contrast.objectives import build_objective
@@ -19,6 +22,7 @@ from contrast.reproducibility import seed_everything
 from contrast.runtime import PrecisionManager, RuntimeContext
 from contrast.tracking import RunStore
 from contrast.training import Trainer
+from contrast.training.evaluation import evaluate
 
 
 def _train(arguments: argparse.Namespace) -> int:
@@ -58,6 +62,61 @@ def _validate(arguments: argparse.Namespace) -> int:
     config = load_experiment_config(arguments.config, arguments.overrides)
     print(canonical_config_json(config), end="")
     return 0
+
+
+def _config_from_checkpoint(state: dict[str, Any]) -> ExperimentConfig:
+    raw_config = copy.deepcopy(state["config"])
+    data_config = raw_config.setdefault("data", {})
+    if "split_seed" not in data_config:
+        data_config["split_seed"] = raw_config["run"]["seed"]
+    return ExperimentConfig.model_validate(raw_config)
+
+
+def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
+    checkpoint = Path(arguments.checkpoint).resolve()
+    state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    config = _config_from_checkpoint(state)
+    run_directory = (
+        Path(arguments.run_dir).resolve() if arguments.run_dir else checkpoint.parent.parent
+    )
+    store = RunStore.for_existing_run(run_directory)
+    runtime = RuntimeContext.initialize()
+    try:
+        if runtime.distributed:
+            raise NotImplementedError("offline evaluation supports a single process")
+        seed_everything(config.run.seed)
+        precision = PrecisionManager(config.precision, runtime.device)
+        precision.configure_backends(config.reproducibility)
+        data = build_cifar100_loaders(config, runtime)
+        model = build_model(config.model).to(runtime.device)
+        model.load_state_dict(state["model"])
+        query_loaders = {"eval": data.validation or data.test}
+        if config.evaluation.test_at_end:
+            query_loaders["test"] = data.test
+        metrics = evaluate(
+            model,
+            data.memory,
+            query_loaders,
+            runtime.device,
+            precision,
+            config.evaluation,
+            include_linear_probe=True,
+        )
+        store.log(
+            {
+                "type": "offline_evaluation",
+                "epoch": int(state.get("epoch", 0)),
+                "step": int(state.get("global_step", 0)),
+                "checkpoint": str(checkpoint),
+                **metrics,
+            }
+        )
+        if runtime.is_primary:
+            print(f"run={store.directory}")
+            print(json.dumps(metrics, indent=2, sort_keys=True))
+        return 0
+    finally:
+        runtime.close()
 
 
 def _serialize_override(key: str, value: Any) -> str:
@@ -120,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--set", dest="overrides", action="append", default=[])
     train.add_argument("--resume")
     train.set_defaults(handler=_train)
+
+    offline = commands.add_parser("evaluate", help="evaluate a saved checkpoint")
+    offline.add_argument("--checkpoint", required=True)
+    offline.add_argument("--run-dir", help="run receiving the appended metrics")
+    offline.set_defaults(handler=_evaluate_checkpoint)
 
     validate = commands.add_parser("validate", help="resolve and validate a config")
     validate.add_argument("--config", "-c", required=True)

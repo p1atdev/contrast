@@ -41,7 +41,7 @@ export function MetricChart({ runs, metric, height = 360, compact = false }: Pro
         series: [
           { label: "step" },
           ...runs.map((run, index) => ({
-            label: run.config.objective.kind + " · seed " + (run.id.split("-").at(-1) ?? "unknown"),
+            label: run.config.objective.kind + " · seed " + run.config.run.seed,
             stroke: colors[index % colors.length],
             width: compact ? 1.5 : 2,
             spanGaps: true,

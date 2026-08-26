@@ -59,6 +59,17 @@ class RunStore:
         )
         self.metrics_path = self.directory / "metrics.jsonl"
 
+    @classmethod
+    def for_existing_run(cls, directory: str | Path) -> RunStore:
+        resolved = Path(directory).resolve()
+        if not (resolved / "config.json").is_file():
+            raise ValueError(f"not a run directory: {resolved}")
+        store = cls.__new__(cls)
+        store.directory = resolved
+        store.checkpoint_directory = resolved / "checkpoints"
+        store.metrics_path = resolved / "metrics.jsonl"
+        return store
+
     def log(self, values: dict[str, Any]) -> None:
         event = {"time": datetime.now(UTC).isoformat(), **values}
         with self.metrics_path.open("a") as stream:

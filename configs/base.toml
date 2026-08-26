@@ -11,6 +11,7 @@ name = "cifar100"
 root = "data"
 download = true
 validation_fraction = 0.1
+split_seed = 0
 num_workers = 4
 pin_memory = true
 
@@ -79,10 +80,21 @@ cudnn_benchmark = false
 epochs = 400
 step_strategy = "grad_cache"
 log_every_steps = 20
-evaluate_every_epochs = 1
+evaluate_every_epochs = 10
 checkpoint_every_epochs = 10
 gradient_clip_norm = 1.0
 
 [evaluation]
 enabled = true
 knn_k = 20
+knn_spaces = ["backbone", "projector"]
+test_at_end = true
+
+[evaluation.linear_probe]
+enabled = true
+epochs = 100
+batch_size = 1024
+lr = 0.1
+momentum = 0.9
+weight_decay = 0.0
+seed = 0

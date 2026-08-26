@@ -27,4 +27,6 @@ def test_dotted_override_is_validated() -> None:
         ["run.seed=7", "batch.global_source_batch_size=64"],
     )
     assert config.run.seed == 7
+    assert config.data.split_seed == 0
     assert config.batch.global_source_batch_size == 64
+    assert config.evaluation.knn_spaces == ("backbone", "projector")

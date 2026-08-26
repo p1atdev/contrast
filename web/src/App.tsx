@@ -15,25 +15,85 @@ const metrics: MetricDefinition[] = [
     value: "loss",
     label: "Training loss",
     group: "OPTIMIZATION",
-    description: "Objective value over optimizer steps",
+    description: "Within-objective convergence; scales differ across losses",
   },
   {
-    value: "eval/knn_top1",
-    label: "k-NN top-1",
+    value: "eval/backbone_knn_top1",
+    label: "Backbone k-NN top-1",
     group: "REPRESENTATION",
-    description: "Neighborhood accuracy of learned embeddings",
+    description: "k-NN on normalized encoder features",
   },
   {
-    value: "eval/classifier_top1",
-    label: "Classifier top-1",
-    group: "CLASSIFICATION HEAD",
-    description: "Top-1 accuracy of the jointly trained head",
+    value: "eval/projector_knn_top1",
+    label: "Projector k-NN top-1",
+    group: "REPRESENTATION",
+    description: "k-NN on normalized projection-head embeddings",
+  },
+  {
+    value: "eval/linear_probe_top1",
+    label: "Frozen linear probe",
+    group: "REPRESENTATION",
+    description: "Final validation accuracy of the shared frozen-backbone probe",
+  },
+  {
+    value: "test/linear_probe_top1",
+    label: "Test linear probe",
+    group: "FINAL TEST",
+    description: "Final test accuracy of the same frozen-backbone probe",
+  },
+  {
+    value: "eval/joint_classifier_top1",
+    label: "Joint classifier top-1",
+    group: "DIAGNOSTIC",
+    description: "Meaningful only when the objective trains the joint head",
+  },
+  {
+    value: "optimization/gradient_norm",
+    label: "Gradient norm",
+    group: "OPTIMIZATION",
+    description: "Global norm before gradient clipping",
+  },
+  {
+    value: "optimization/gradient_was_clipped",
+    label: "Gradient clipped",
+    group: "OPTIMIZATION",
+    description: "1 when the logged optimizer step exceeded the clip threshold",
+  },
+  {
+    value: "pairs/positive_per_anchor",
+    label: "Positives per anchor",
+    group: "OBJECTIVE",
+    description: "Positive-pair count seen by softmax objectives",
+  },
+  {
+    value: "sigmoid/scale",
+    label: "Sigmoid scale",
+    group: "OBJECTIVE",
+    description: "Learned Sigmoid-SupCon logit scale",
+  },
+  {
+    value: "sigmoid/bias",
+    label: "Sigmoid bias",
+    group: "OBJECTIVE",
+    description: "Learned Sigmoid-SupCon class-prior bias",
   },
   {
     value: "optimization/lr",
     label: "Learning rate",
     group: "SCHEDULE",
     description: "Effective learning rate at each optimizer step",
+  },
+  {
+    value: "eval/knn_top1",
+    label: "Legacy k-NN top-1",
+    group: "LEGACY",
+    description: "Pre-fix projector-space metric from existing runs",
+  },
+  {
+    value: "eval/classifier_top1",
+    label: "Legacy classifier top-1",
+    group: "LEGACY",
+    description: "Pre-fix joint-head metric from existing runs",
   },
 ];
 
@@ -232,6 +292,7 @@ export default function App() {
                     <th>Run</th>
                     <th>Objective</th>
                     <th>Optimizer</th>
+                    <th>Seeds</th>
                     <th>Global batch</th>
                     <th>ViT</th>
                     <th>Precision</th>
@@ -243,6 +304,9 @@ export default function App() {
                       <td>{run.id.split("/").at(-1)}</td>
                       <td>{run.config.objective.kind}</td>
                       <td>{run.config.optimizer.kind}</td>
+                      <td>
+                        run {run.config.run.seed} / split {run.config.data.split_seed ?? "legacy"}
+                      </td>
                       <td>
                         {run.config.batch.global_source_batch_size} / chunk{" "}
                         {run.config.batch.grad_cache_chunk_size_per_rank}

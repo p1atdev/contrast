@@ -110,6 +110,7 @@ class Trainer:
 
             if self.global_step % self.config.training.log_every_steps == 0:
                 elapsed = time.perf_counter() - started
+                gradient_norm_value = float(gradient_norm)
                 metrics: dict[str, Any] = {
                     "type": "train",
                     "epoch": self.epoch,
@@ -117,13 +118,17 @@ class Trainer:
                     "step_in_epoch": step_in_epoch,
                     "loss": float(result.loss.detach()),
                     "optimization/lr": self.optimization.lr,
-                    "optimization/gradient_norm": float(gradient_norm),
+                    "optimization/gradient_norm": gradient_norm_value,
                     "performance/sources_per_second": (
                         (step_in_epoch + 1)
                         * self.config.batch.global_source_batch_size
                         / max(elapsed, 1e-9)
                     ),
                 }
+                if self.config.training.gradient_clip_norm is not None:
+                    metrics["optimization/gradient_was_clipped"] = float(
+                        gradient_norm_value > self.config.training.gradient_clip_norm
+                    )
                 metrics.update({key: float(value) for key, value in result.metrics.items()})
                 self.store.log(metrics)
                 if self.runtime.is_primary:
@@ -134,43 +139,44 @@ class Trainer:
                     )
         return True
 
-    def _evaluate(self) -> None:
-        query = self.data.validation or self.data.test
+    def _evaluate(self, *, final: bool = False) -> None:
+        query_loaders = {"eval": self.data.validation or self.data.test}
+        if final and self.config.evaluation.test_at_end:
+            query_loaders["test"] = self.data.test
         with self.optimization.evaluation_parameters():
             metrics = evaluate(
                 self.model,
                 self.data.memory,
-                query,
+                query_loaders,
                 self.runtime.device,
                 self.precision,
-                self.config.evaluation.knn_k,
+                self.config.evaluation,
+                include_linear_probe=final,
             )
         self.store.log(
             {
-                "type": "evaluation",
+                "type": "final_evaluation" if final else "evaluation",
                 "epoch": self.epoch,
                 "step": self.global_step,
                 **metrics,
             }
         )
         if self.runtime.is_primary:
-            print(
-                f"evaluation epoch={self.epoch} "
-                f"classifier={metrics['eval/classifier_top1']:.4f} "
-                f"knn={metrics['eval/knn_top1']:.4f}",
-                flush=True,
+            summary = " ".join(
+                f"{key}={value:.4f}" for key, value in metrics.items() if key.endswith("top1")
             )
+            print(f"evaluation epoch={self.epoch} {summary}", flush=True)
 
     def fit(self) -> Path:
         completed = True
         for epoch in range(self.epoch, self.config.training.epochs):
             self.epoch = epoch
             completed = self._train_epoch()
-            if (
-                self.config.evaluation.enabled
-                and (epoch + 1) % self.config.training.evaluate_every_epochs == 0
+            is_final_epoch = completed and epoch + 1 == self.config.training.epochs
+            if self.config.evaluation.enabled and (
+                (epoch + 1) % self.config.training.evaluate_every_epochs == 0 or is_final_epoch
             ):
-                self._evaluate()
+                self._evaluate(final=is_final_epoch)
             if (epoch + 1) % self.config.training.checkpoint_every_epochs == 0:
                 self._checkpoint(f"epoch-{epoch + 1:04d}.pt")
             if not completed:

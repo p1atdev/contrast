@@ -35,6 +35,7 @@ class DataConfig(FrozenModel):
     download: bool = True
     huggingface: HuggingFaceDataConfig = HuggingFaceDataConfig()
     validation_fraction: float = Field(default=0.1, ge=0.0, lt=1.0)
+    split_seed: int = 0
     num_workers: int = Field(default=4, ge=0)
     pin_memory: bool = True
     augmentation: AugmentationConfig = AugmentationConfig()
@@ -186,9 +187,33 @@ class TrainingConfig(FrozenModel):
     max_steps: PositiveInt | None = None
 
 
+class LinearProbeConfig(FrozenModel):
+    enabled: bool = True
+    epochs: PositiveInt = 100
+    batch_size: PositiveInt = 1024
+    lr: float = Field(default=0.1, gt=0.0)
+    momentum: float = Field(default=0.9, ge=0.0, lt=1.0)
+    weight_decay: float = Field(default=0.0, ge=0.0)
+    seed: int = 0
+
+
 class EvaluationConfig(FrozenModel):
     enabled: bool = True
     knn_k: PositiveInt = 20
+    knn_spaces: tuple[Literal["backbone", "projector"], ...] = (
+        "backbone",
+        "projector",
+    )
+    test_at_end: bool = True
+    linear_probe: LinearProbeConfig = LinearProbeConfig()
+
+    @model_validator(mode="after")
+    def validate_knn_spaces(self) -> EvaluationConfig:
+        if not self.knn_spaces:
+            raise ValueError("at least one k-NN feature space is required")
+        if len(set(self.knn_spaces)) != len(self.knn_spaces):
+            raise ValueError("k-NN feature spaces must be unique")
+        return self
 
 
 class ExperimentConfig(FrozenModel):
