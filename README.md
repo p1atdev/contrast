@@ -68,7 +68,7 @@ GradCacheはlogical batch全体の表現から一度だけ損失を計算し、c
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。optimizerの`weight_decay_policy = "standard"`はLinear/Conv等の行列weightだけをdecayし、bias、Norm、class token、position embedding、Sigmoid lossのscalar parameterを除外します。旧single-group optimizer checkpointはresume時に新しいgroupへ移行します。非有限lossまたはgradientはそのstepで即座に例外にします。
 
-本sweepはraw/EMA評価と途中checkpointを20 epochごとに実行します。`eval/backbone_knn_top1`が改善した評価時点は`best.pt`へ原子的に上書き保存し、最終epochは`final.pt`へ保存します。gradient clipは10.0で異常なspikeだけを抑える設定とし、clip前後のglobal norm、clip係数、model/objective別norm、CUDA allocated/reserved memoryを記録します。
+本sweepはraw/EMA評価と途中checkpointを20 epochごとに実行します。`eval/backbone_knn_top1`が改善した評価時点は`best.pt`へ原子的に上書き保存し、最終epochは`final.pt`へ保存します。gradient clipは10.0とし、初期の大きな勾配を抑えつつ定常時の常時clipを避けます。clip前後のglobal norm、clip係数、model/objective別norm、CUDA allocated/reserved memoryを記録します。
 
 ## EMA
 
