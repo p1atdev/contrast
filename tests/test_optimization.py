@@ -39,6 +39,25 @@ def test_standard_weight_decay_excludes_bias_norm_special_and_scalar() -> None:
     }
 
 
+def test_schedule_free_lr_reports_warmup_adjusted_value() -> None:
+    named_parameters = _parameters()
+    controller = OptimizationController(
+        AdamWScheduleFreeOptimizerConfig(lr=0.001, warmup_steps=4),
+        named_parameters,
+        steps=10,
+    )
+    controller.train()
+    for _, parameter in named_parameters:
+        parameter.grad = torch.ones_like(parameter)
+
+    controller.step()
+
+    group = controller.optimizer.param_groups[0]
+    assert group["lr"] == 0.001
+    assert group["scheduled_lr"] == 0.00025
+    assert controller.lr == group["scheduled_lr"]
+
+
 def test_legacy_single_group_optimizer_state_migrates() -> None:
     legacy_parameters = _parameters()
     legacy = OptimizationController(

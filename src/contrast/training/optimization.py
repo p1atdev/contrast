@@ -158,4 +158,7 @@ class OptimizationController:
 
     @property
     def lr(self) -> float:
-        return float(self.optimizer.param_groups[0]["lr"])
+        group = self.optimizer.param_groups[0]
+        if self.schedule_free:
+            return float(group["scheduled_lr"])
+        return float(group["lr"])
