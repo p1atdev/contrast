@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { resolve } from "node:path";
 
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -51,5 +52,10 @@ function runsApi(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), runsApi()],
+  plugins: [react(), tailwindcss(), runsApi()],
+  resolve: {
+    alias: {
+      "@": resolve(import.meta.dirname, "./src"),
+    },
+  },
 });

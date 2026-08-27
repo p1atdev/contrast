@@ -3,7 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
 import type { RunDetail } from "../api";
-import { alignMetric } from "../lib/chartData";
+import { alignMetric, positiveOnly, smoothAlignedData } from "../lib/chartData";
 
 const colors = ["#77e0a5", "#f5b85c", "#67b7ff", "#d88cff", "#ff7d7d", "#d0dc73"];
 
@@ -12,28 +12,49 @@ type Props = {
   metric: string;
   height?: number;
   compact?: boolean;
+  smoothingWindow?: number;
+  logScale?: boolean;
 };
 
-export function MetricChart({ runs, metric, height = 360, compact = false }: Props) {
+export function MetricChart({
+  runs,
+  metric,
+  height = 360,
+  compact = false,
+  smoothingWindow = 1,
+  logScale = false,
+}: Props) {
   const container = useRef<HTMLDivElement>(null);
-  const aligned = useMemo(() => alignMetric(runs, metric), [metric, runs]);
+  const rawAligned = useMemo(() => alignMetric(runs, metric), [metric, runs]);
+  const aligned = useMemo(() => {
+    const source = logScale ? positiveOnly(rawAligned) : rawAligned;
+    return smoothAlignedData(source, smoothingWindow);
+  }, [logScale, rawAligned, smoothingWindow]);
+  const hasRenderableValues = aligned.values.some((series) =>
+    series.some((value) => value !== null),
+  );
 
   useEffect(() => {
-    if (!container.current || aligned.x.length === 0) return;
+    if (!container.current || aligned.x.length === 0 || !hasRenderableValues) return;
     const chart = new uPlot(
       {
         width: Math.max(260, container.current.clientWidth),
         height,
-        scales: { x: { time: false } },
+        scales: {
+          x: { time: false },
+          y: logScale ? { distr: 3, log: 10 } : {},
+        },
         axes: [
           {
-            stroke: "#87929f",
-            grid: { stroke: "#242b33" },
+            stroke: "#bdcbc5",
+            ticks: { stroke: "#56645f" },
+            grid: { stroke: "#2b3734" },
             font: compact ? "10px ui-monospace" : "11px ui-monospace",
           },
           {
-            stroke: "#87929f",
-            grid: { stroke: "#242b33" },
+            stroke: "#bdcbc5",
+            ticks: { stroke: "#56645f" },
+            grid: { stroke: "#2b3734" },
             font: compact ? "10px ui-monospace" : "11px ui-monospace",
           },
         ],
@@ -59,7 +80,7 @@ export function MetricChart({ runs, metric, height = 360, compact = false }: Pro
       resize.disconnect();
       chart.destroy();
     };
-  }, [aligned, compact, height, runs]);
+  }, [aligned, compact, hasRenderableValues, height, logScale, runs]);
 
   if (runs.length === 0) {
     return (
@@ -75,5 +96,15 @@ export function MetricChart({ runs, metric, height = 360, compact = false }: Pro
       </div>
     );
   }
-  return <div className={compact ? "chart compact" : "chart"} ref={container} />;
+  if (!hasRenderableValues) {
+    return (
+      <div className="chart-empty" style={{ minHeight: height }}>
+        対数軸で表示できる正の値がありません。
+      </div>
+    );
+  }
+  const className = ["chart", compact ? "compact" : "", logScale ? "log-scale" : ""]
+    .filter(Boolean)
+    .join(" ");
+  return <div className={className} ref={container} />;
 }
