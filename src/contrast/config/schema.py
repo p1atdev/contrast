@@ -263,6 +263,9 @@ class EvaluationConfig(FrozenModel):
         "backbone",
         "projector",
     )
+    selection_metric: str | None = "eval/backbone_knn_top1"
+    selection_mode: Literal["max", "min"] = "max"
+    save_best_checkpoint: bool = True
     test_at_end: bool = True
     linear_probe: LinearProbeConfig = LinearProbeConfig()
 

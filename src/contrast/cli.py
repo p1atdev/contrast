@@ -97,8 +97,15 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
                 raise ValueError("checkpoint config enables EMA but contains no EMA state")
             ema = ExponentialMovingAverage(model, config.ema)
             ema.load_state_dict(state["ema"])
-        query_loaders = {"eval": data.validation or data.test}
-        if config.evaluation.test_at_end:
+        queries = arguments.queries
+        include_eval = queries in {"config", "eval", "both"}
+        include_test = queries in {"test", "both"} or (
+            queries == "config" and config.evaluation.test_at_end
+        )
+        query_loaders = {}
+        if include_eval:
+            query_loaders["eval"] = data.validation or data.test
+        if include_test:
             query_loaders["test"] = data.test
         evaluation_weights = config.ema.evaluation_weights if ema is not None else "raw"
         metrics: dict[str, float] = {}
@@ -226,6 +233,12 @@ def build_parser() -> argparse.ArgumentParser:
     offline = commands.add_parser("evaluate", help="evaluate a saved checkpoint")
     offline.add_argument("--checkpoint", required=True)
     offline.add_argument("--run-dir", help="run receiving the appended metrics")
+    offline.add_argument(
+        "--queries",
+        choices=("config", "eval", "test", "both"),
+        default="config",
+        help="query split(s); config follows evaluation.test_at_end",
+    )
     offline.set_defaults(handler=_evaluate_checkpoint)
 
     validate = commands.add_parser("validate", help="resolve and validate a config")

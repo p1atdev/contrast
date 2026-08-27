@@ -53,7 +53,7 @@ uv run contrast sweep configs/sweeps/core_losses_pilot.toml --dry-run
 uv run contrast sweep configs/sweeps/core_losses_pilot.toml
 ```
 
-pilot確認後、損失5種 × seed 3種の本sweepを実行します。sweepは起動前に全組合せを設定検証し、seedごとに5損失を順番に実行します。結果は既存runと分離した`runs/cifar100-core-v2/`へ保存されます。
+pilot確認後、損失5種 × seed 3種の本sweepを実行します。sweepは起動前に全組合せを設定検証し、seedごとに5損失を順番に実行します。結果は既存runと分離した`runs/cifar100-core-v3/`へ保存されます。各runは120 epochで、400 epochの初回sweepで観測された80〜120 epoch付近の性能ピークを含みます。
 
 ```bash
 uv run contrast sweep configs/sweeps/core_losses.toml --dry-run
@@ -64,11 +64,11 @@ uv run contrast sweep configs/sweeps/core_losses.toml
 
 既定はFP32 parameter、BF16 autocast、FP32 loss、TF32許可です。TF32自体は主に速度向上の設定で、activation memory削減はBF16 autocastが担います。同じGPU・ソフトウェア条件でseed、data order、viewごとのaugmentationを固定します。より強い決定性が必要なら`reproducibility.mode = "strict"`を指定できます。
 
-GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。今回のViT-Tiny・logical batch 256 sourceはRTX 4070 Ti SUPER上でDirect実行が約2.8 GiBに収まり、GradCache 128 source chunkより約21%高速だったため、本sweepの既定は`step_strategy = "direct"`です。より大きなbatch/modelでOOMする場合は`"grad_cache"`へ切り替え、`batch.grad_cache_chunk_size_per_rank`を調整します。
+GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。今回のViT-Tiny・logical batch 256 sourceはRTX 4070 Ti SUPER上でDirect実行が約2.8 GiBに収まり、GradCache 128 source chunkより約21%高速だったため、本sweepの既定は`step_strategy = "direct"`です。SupConの短時間計測ではbatch 512/1024へ増やしてもsource throughputは向上せず、1024は約11.8 GiBを使用しました。pair行列とbatch内positive/negative数も変わるため、core sweepはbatch 256を維持します。より大きなbatch/modelでOOMする場合は`"grad_cache"`へ切り替え、`batch.grad_cache_chunk_size_per_rank`を調整します。
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。optimizerの`weight_decay_policy = "standard"`はLinear/Conv等の行列weightだけをdecayし、bias、Norm、class token、position embedding、Sigmoid lossのscalar parameterを除外します。旧single-group optimizer checkpointはresume時に新しいgroupへ移行します。非有限lossまたはgradientはそのstepで即座に例外にします。
 
-本sweepはraw/EMA評価を20 epochごと、途中checkpointを50 epochごとに実行し、最終epochでは`final.pt`だけを保存します。
+本sweepはraw/EMA評価と途中checkpointを20 epochごとに実行します。`eval/backbone_knn_top1`が改善した評価時点は`best.pt`へ原子的に上書き保存し、最終epochは`final.pt`へ保存します。gradient clipは10.0で異常なspikeだけを抑える設定とし、clip前後のglobal norm、clip係数、model/objective別norm、CUDA allocated/reserved memoryを記録します。
 
 ## EMA
 
@@ -132,14 +132,18 @@ CIFAR-100はstratified split後もtrainが各class 450枚で均衡している�
 - `eval/backbone_knn_top1`: encoder feature上のk-NN。全objectiveで同じ意味を持つ主要指標
 - `eval/projector_knn_top1`: projection head出力上のk-NN。損失が直接最適化する空間の診断指標
 
-最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。`test_at_end = true`なら同じprobeで`test/linear_probe_top1`も最終時だけ計測します。
+最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。core sweepでは`test_at_end = false`として、checkpoint選択中にtest splitを参照しません。
 
 `eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失単独ではclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。
 既存checkpointにも同じ評価を後付けできます。checkpointが元runの`checkpoints/`内にあればrun directoryは自動推定され、結果はそのrunの`metrics.jsonl`へ追記されます。移動したcheckpointには`--run-dir`を指定します。GPUを学習runと共有するため、同じGPUでの学習中ではなく停止後または完了後に実行してください。
 
 ```bash
-uv run contrast evaluate --checkpoint runs/cifar100-core/<run>/checkpoints/final.pt
+uv run contrast evaluate \
+  --checkpoint runs/cifar100-core-v3/<run>/checkpoints/best.pt \
+  --queries test
 ```
+
+`--queries`は`config`（保存済み設定に従う）、`eval`、`test`、`both`を選べます。3 seedのvalidation結果からcheckpointと手法を確定した後に、選択済み`best.pt`へ`--queries test`を一度だけ実行します。
 
 ## Dashboard
 

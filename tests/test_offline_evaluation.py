@@ -39,11 +39,18 @@ def test_current_checkpoint_preserves_explicit_split_seed() -> None:
 
 def test_evaluate_subcommand_accepts_checkpoint() -> None:
     arguments = build_parser().parse_args(
-        ["evaluate", "--checkpoint", "runs/example/checkpoints/final.pt"]
+        [
+            "evaluate",
+            "--checkpoint",
+            "runs/example/checkpoints/final.pt",
+            "--queries",
+            "test",
+        ]
     )
 
     assert arguments.command == "evaluate"
     assert arguments.checkpoint.endswith("final.pt")
+    assert arguments.queries == "test"
 
 
 def test_existing_run_store_appends_without_reinitializing(tmp_path: Path) -> None:
@@ -73,7 +80,7 @@ def test_core_sweep_expands_seed_major() -> None:
     assert [path.name for path, _ in runs[:5]] == expected_names
     assert all("run.seed=0" in overrides for _, overrides in runs[:5])
     assert all("run.seed=1" in overrides for _, overrides in runs[5:10])
-    assert all('run.experiment="cifar100-core-v2"' in overrides for _, overrides in runs)
+    assert all('run.experiment="cifar100-core-v3"' in overrides for _, overrides in runs)
 
 
 def test_sweep_preflight_rejects_invalid_later_combination(tmp_path: Path) -> None:

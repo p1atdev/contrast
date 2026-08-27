@@ -8,4 +8,4 @@ configs = [
 
 [grid]
 "run.seed" = [0, 1, 2]
-"run.experiment" = ["cifar100-core-v2"]
+"run.experiment" = ["cifar100-core-v3"]
