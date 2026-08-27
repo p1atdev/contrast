@@ -67,6 +67,60 @@ import {
 
 const runColors = ["#5ee6a8", "#f5b85c", "#67b7ff", "#d88cff", "#ff7d7d", "#d0dc73"];
 
+function representationDiagnosticMetrics(
+  prefix: "eval" | "eval_ema",
+  labelPrefix: string,
+  group: string,
+  category: MetricDefinition["category"],
+): MetricDefinition[] {
+  return (["backbone", "projector"] as const).flatMap((space) => {
+    const spaceLabel = space === "backbone" ? "Backbone" : "Projector";
+    const label = `${labelPrefix}${spaceLabel}`;
+    return [
+      {
+        value: `${prefix}/${space}_std_mean`,
+        label: `${label} mean std`,
+        group,
+        category,
+        description: "Mean per-dimension standard deviation after L2 normalization",
+        format: "decimal",
+      },
+      {
+        value: `${prefix}/${space}_isotropy`,
+        label: `${label} isotropy`,
+        group,
+        category,
+        description: "Normalized spread across dimensions; 1 is the unit-sphere maximum",
+        format: "percent",
+      },
+      {
+        value: `${prefix}/${space}_effective_rank_ratio`,
+        label: `${label} effective rank`,
+        group,
+        category,
+        description: "Entropy rank of centered covariance divided by representation dimension",
+        format: "percent",
+      },
+      {
+        value: `${prefix}/${space}_offdiag_correlation_rms`,
+        label: `${label} dimension correlation`,
+        group,
+        category,
+        description: "RMS off-diagonal correlation among dimensions with non-zero variance",
+        format: "decimal",
+      },
+      {
+        value: `${prefix}/${space}_mean_pairwise_cosine`,
+        label: `${label} pairwise cosine`,
+        group,
+        category,
+        description: "Mean cosine over all distinct example pairs; values near 1 indicate collapse",
+        format: "decimal",
+      },
+    ] satisfies MetricDefinition[];
+  });
+}
+
 const metrics: MetricDefinition[] = [
   {
     value: "loss",
@@ -100,6 +154,7 @@ const metrics: MetricDefinition[] = [
     description: "Final validation accuracy of the shared frozen-backbone probe",
     format: "percent",
   },
+  ...representationDiagnosticMetrics("eval", "", "REPRESENTATION HEALTH", "diagnostics"),
   {
     value: "test/linear_probe_top1",
     label: "Test linear probe",
@@ -132,6 +187,7 @@ const metrics: MetricDefinition[] = [
     description: "Final validation accuracy of a probe trained on the frozen EMA backbone",
     format: "percent",
   },
+  ...representationDiagnosticMetrics("eval_ema", "EMA ", "EMA REPRESENTATION HEALTH", "ema"),
   {
     value: "test_ema/backbone_knn_top1",
     label: "EMA test backbone k-NN",

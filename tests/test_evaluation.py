@@ -1,5 +1,6 @@
 import math
 
+import pytest
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -12,6 +13,7 @@ from contrast.training.evaluation import (
     EncodedDataset,
     _knn_accuracy,
     _linear_probe_accuracies,
+    _representation_diagnostics,
     evaluate,
 )
 
@@ -40,6 +42,31 @@ def test_knn_normalizes_backbone_features() -> None:
     )
 
     assert accuracy == 1.0
+
+
+def test_representation_diagnostics_detect_collapse() -> None:
+    collapsed = torch.tensor([[3.0, 4.0]]).repeat(8, 1)
+
+    metrics = _representation_diagnostics(collapsed)
+
+    assert metrics["std_mean"] == pytest.approx(0.0, abs=1e-7)
+    assert metrics["isotropy"] == pytest.approx(0.0, abs=1e-7)
+    assert metrics["effective_rank_ratio"] == pytest.approx(0.0, abs=1e-7)
+    assert metrics["offdiag_correlation_rms"] == pytest.approx(0.0, abs=1e-7)
+    assert metrics["mean_pairwise_cosine"] == pytest.approx(1.0)
+
+
+def test_representation_diagnostics_recognize_isotropic_unit_vectors() -> None:
+    basis = torch.eye(4)
+    isotropic = torch.cat((basis, -basis))
+
+    metrics = _representation_diagnostics(isotropic)
+
+    assert metrics["std_mean"] == pytest.approx(0.5)
+    assert metrics["isotropy"] == pytest.approx(1.0)
+    assert metrics["effective_rank_ratio"] == pytest.approx(1.0)
+    assert metrics["offdiag_correlation_rms"] == pytest.approx(0.0, abs=1e-7)
+    assert metrics["mean_pairwise_cosine"] == pytest.approx(-1.0 / 7.0)
 
 
 def test_linear_probe_is_deterministic_and_learns_frozen_features() -> None:
@@ -137,9 +164,13 @@ def test_evaluate_reports_both_spaces_and_restores_model_mode() -> None:
         config,
     )
 
-    assert metrics == {
-        "eval/joint_classifier_top1": 1.0,
-        "eval/backbone_knn_top1": 1.0,
-        "eval/projector_knn_top1": 1.0,
-    }
+    assert metrics["eval/joint_classifier_top1"] == 1.0
+    assert metrics["eval/backbone_knn_top1"] == 1.0
+    assert metrics["eval/projector_knn_top1"] == 1.0
+    for space in ("backbone", "projector"):
+        assert metrics[f"eval/{space}_std_mean"] == pytest.approx(0.5)
+        assert metrics[f"eval/{space}_isotropy"] == pytest.approx(2**-0.5)
+        assert metrics[f"eval/{space}_effective_rank_ratio"] == pytest.approx(0.5)
+        assert metrics[f"eval/{space}_offdiag_correlation_rms"] == pytest.approx(0.0)
+        assert metrics[f"eval/{space}_mean_pairwise_cosine"] == pytest.approx(-1.0)
     assert model.training

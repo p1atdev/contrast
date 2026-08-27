@@ -134,6 +134,8 @@ CIFAR-100はstratified split後もtrainが各class 450枚で均衡している�
 - `eval/backbone_knn_top1`: encoder feature上のk-NN。全objectiveで同じ意味を持つ主要指標
 - `eval/projector_knn_top1`: projection head出力上のk-NN。損失が直接最適化する空間の診断指標
 
+同じ固定validation表現について、backbone/projectorごとにcollapseと次元冗長性の診断も記録します。`std_mean`はL2 normalize後の次元別標準偏差の平均、`isotropy`はそれを単位球上の最大値`1/sqrt(d)`で正規化した値です。`effective_rank_ratio`は中心化共分散のentropy rankを表現次元で割った値で、`offdiag_correlation_rms`は分散を持つ次元間の非対角相関、`mean_pairwise_cosine`は異なるサンプル全組の平均cosineです。前3者が0へ、またはpairwise cosineが1へ近づく挙動はcollapseを示します。EMA版は`eval_ema/*`に分けて保存します。
+
 最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。core sweepでは`test_at_end = false`として、checkpoint選択中にtest splitを参照しません。
 
 `eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失単独ではclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。

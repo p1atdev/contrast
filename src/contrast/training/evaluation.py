@@ -76,6 +76,61 @@ def _knn_accuracy(
     return correct / total
 
 
+@torch.no_grad()
+def _representation_diagnostics(vectors: torch.Tensor) -> dict[str, float]:
+    """Scale-free diagnostics for collapse and dimensional redundancy.
+
+    Vectors are L2-normalized before measurement so backbone and projector
+    spaces remain comparable. ``isotropy`` is the mean per-dimension standard
+    deviation relative to the unit-sphere maximum ``1 / sqrt(d)``. Effective
+    rank is the entropy rank of the centered covariance, divided by ``d``.
+    """
+    if vectors.ndim != 2 or vectors.shape[0] < 2 or vectors.shape[1] < 1:
+        raise ValueError("representation diagnostics require a [N, D] tensor with N >= 2")
+
+    normalized = F.normalize(vectors.float(), dim=1)
+    sample_count, dimension = normalized.shape
+    centered = normalized - normalized.mean(dim=0)
+    covariance = centered.T @ centered / sample_count
+    variances = covariance.diagonal().clamp_min(0.0)
+    standard_deviations = variances.sqrt()
+    std_mean = standard_deviations.mean()
+    isotropy = (std_mean * math.sqrt(dimension)).clamp(0.0, 1.0)
+
+    eigenvalues = torch.linalg.eigvalsh(covariance).clamp_min(0.0)
+    total_variance = eigenvalues.sum()
+    if float(total_variance) > torch.finfo(eigenvalues.dtype).eps:
+        probabilities = eigenvalues / total_variance
+        positive = probabilities > 0
+        entropy = -(probabilities[positive] * probabilities[positive].log()).sum()
+        effective_rank_ratio = (entropy.exp() / dimension).clamp(0.0, 1.0)
+    else:
+        effective_rank_ratio = eigenvalues.new_zeros(())
+
+    scales = standard_deviations[:, None] * standard_deviations[None, :]
+    off_diagonal = ~torch.eye(dimension, dtype=torch.bool, device=vectors.device)
+    valid_correlations = off_diagonal & (scales > torch.finfo(scales.dtype).eps)
+    if bool(valid_correlations.any()):
+        correlations = covariance / scales.clamp_min(torch.finfo(scales.dtype).eps)
+        offdiag_correlation_rms = correlations[valid_correlations].square().mean().sqrt()
+    else:
+        offdiag_correlation_rms = covariance.new_zeros(())
+
+    summed = normalized.sum(dim=0)
+    pairwise_cosine_sum = summed.square().sum() - normalized.square().sum()
+    mean_pairwise_cosine = (pairwise_cosine_sum / (sample_count * (sample_count - 1))).clamp(
+        -1.0, 1.0
+    )
+
+    return {
+        "std_mean": float(std_mean),
+        "isotropy": float(isotropy),
+        "effective_rank_ratio": float(effective_rank_ratio),
+        "offdiag_correlation_rms": float(offdiag_correlation_rms),
+        "mean_pairwise_cosine": float(mean_pairwise_cosine),
+    }
+
+
 def _linear_probe_accuracies(
     memory: EncodedDataset,
     queries: Mapping[str, EncodedDataset],
@@ -171,6 +226,12 @@ def evaluate(
                     query.labels,
                     device,
                     config.knn_k,
+                )
+                metrics.update(
+                    {
+                        f"{name}/{space}_{metric}": value
+                        for metric, value in _representation_diagnostics(query_vectors).items()
+                    }
                 )
         if include_linear_probe and config.linear_probe.enabled:
             accuracies, final_loss = _linear_probe_accuracies(
