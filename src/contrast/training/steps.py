@@ -58,9 +58,15 @@ class DirectStep:
         objective: Objective,
         batch: PreparedBatch,
     ) -> ObjectiveResult:
+        context = objective.prepare_context(
+            batch.images,
+            batch.metadata,
+            self.precision,
+            chunk_size=None,
+        )
         with self.precision.autocast():
             output = model(batch.images)
-        result = objective(output, batch.metadata)
+        result = objective.compute(output, batch.metadata, context)
         if not bool(torch.isfinite(result.loss.detach())):
             raise FloatingPointError("objective returned a non-finite loss")
         if self.precision.uses_scaler:
@@ -88,6 +94,12 @@ class GradCacheStep:
         objective: Objective,
         batch: PreparedBatch,
     ) -> ObjectiveResult:
+        context = objective.prepare_context(
+            batch.images,
+            batch.metadata,
+            self.precision,
+            chunk_size=self.chunk_size,
+        )
         snapshots: list[RNGSnapshot] = []
         cached: list[ModelOutput] = []
         device = batch.images.device
@@ -101,8 +113,17 @@ class GradCacheStep:
             features=torch.cat([item.features for item in cached]).detach().requires_grad_(),
             embeddings=torch.cat([item.embeddings for item in cached]).detach().requires_grad_(),
             logits=torch.cat([item.logits for item in cached]).detach().requires_grad_(),
+            raw_embeddings=(
+                torch.cat(
+                    [item.raw_embeddings for item in cached if item.raw_embeddings is not None]
+                )
+                .detach()
+                .requires_grad_()
+                if cached[0].raw_embeddings is not None
+                else None
+            ),
         )
-        result = objective(leaves, batch.metadata)
+        result = objective.compute(leaves, batch.metadata, context)
         if not bool(torch.isfinite(result.loss.detach())):
             raise FloatingPointError("objective returned a non-finite loss")
         result.loss.backward()

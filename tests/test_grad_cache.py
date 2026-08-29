@@ -7,7 +7,7 @@ from torch.nn import functional as F
 
 from contrast.config.schema import PrecisionConfig
 from contrast.models.model import ModelOutput
-from contrast.objectives.base import ObjectiveMetadata, ObjectiveResult
+from contrast.objectives.base import Objective, ObjectiveMetadata, ObjectiveResult
 from contrast.objectives.losses import SoftmaxContrastiveObjective
 from contrast.runtime.precision import PrecisionManager
 from contrast.training.steps import DirectStep, GradCacheStep, PreparedBatch
@@ -71,7 +71,7 @@ def test_grad_cache_matches_direct_gradients() -> None:
         )
 
 
-class NonFiniteObjective(nn.Module):
+class NonFiniteObjective(Objective):
     def forward(
         self,
         output: ModelOutput,

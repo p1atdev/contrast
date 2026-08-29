@@ -60,6 +60,7 @@ class Trainer:
         steps = len(data.train) * config.training.epochs
         if config.training.max_steps is not None:
             steps = min(steps, config.training.max_steps)
+        self.objective.initialize(self.model, total_steps=steps)
         named_parameters = chain(
             ((f"model.{name}", parameter) for name, parameter in self.model.named_parameters()),
             (
@@ -172,6 +173,7 @@ class Trainer:
             scaler = self.precision.scaler if self.precision.uses_scaler else None
             self.optimization.step(scaler)
             self.global_step += 1
+            result.metrics.update(self.objective.after_optimizer_step(self.model, self.global_step))
             ema_updated = (
                 self.ema.update(self.model, self.global_step) if self.ema is not None else False
             )
@@ -322,21 +324,32 @@ class Trainer:
 
     def fit(self) -> Path:
         completed = True
+        stopped_at_max_steps = False
         for epoch in range(self.epoch, self.config.training.epochs):
             self.epoch = epoch
-            completed = self._train_epoch()
-            is_final_epoch = completed and epoch + 1 == self.config.training.epochs
-            if self.config.evaluation.enabled and (
-                (epoch + 1) % self.config.training.evaluate_every_epochs == 0 or is_final_epoch
+            epoch_completed = self._train_epoch()
+            stopped_at_max_steps = bool(
+                not epoch_completed
+                and self.config.training.max_steps is not None
+                and self.global_step >= self.config.training.max_steps
+            )
+            completed = epoch_completed or stopped_at_max_steps
+            is_final_epoch = epoch_completed and epoch + 1 == self.config.training.epochs
+            if (
+                epoch_completed
+                and self.config.evaluation.enabled
+                and (
+                    (epoch + 1) % self.config.training.evaluate_every_epochs == 0 or is_final_epoch
+                )
             ):
                 self._evaluate(final=is_final_epoch)
             if (
-                completed
+                epoch_completed
                 and not is_final_epoch
                 and (epoch + 1) % self.config.training.checkpoint_every_epochs == 0
             ):
                 self._checkpoint(f"epoch-{epoch + 1:04d}.pt")
-            if not completed:
+            if not epoch_completed:
                 break
         final = self._checkpoint("final.pt")
         self.store.log(
@@ -345,6 +358,7 @@ class Trainer:
                 "epoch": self.epoch,
                 "step": self.global_step,
                 "completed": completed,
+                "stopped_at_max_steps": stopped_at_max_steps,
             }
         )
         return final

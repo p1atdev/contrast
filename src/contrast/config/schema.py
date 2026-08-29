@@ -129,13 +129,96 @@ class JointObjectiveConfig(FrozenModel):
     cross_entropy_weight: float = Field(default=1.0, ge=0.0)
 
 
+class NormalizedSoftmaxObjectiveConfig(FrozenModel):
+    kind: Literal["normalized_softmax"] = "normalized_softmax"
+    scale: float = Field(default=32.0, gt=0.0)
+    space: Literal["backbone", "projector"] = "backbone"
+
+
+class CosFaceObjectiveConfig(FrozenModel):
+    kind: Literal["cosface"] = "cosface"
+    scale: float = Field(default=32.0, gt=0.0)
+    margin: float = Field(default=0.35, ge=0.0, lt=1.0)
+    space: Literal["backbone", "projector"] = "backbone"
+
+
+class ArcFaceObjectiveConfig(FrozenModel):
+    kind: Literal["arcface"] = "arcface"
+    scale: float = Field(default=32.0, gt=0.0)
+    margin: float = Field(default=0.5, ge=0.0, lt=3.141592653589793)
+    space: Literal["backbone", "projector"] = "backbone"
+
+
+class CircleObjectiveConfig(FrozenModel):
+    kind: Literal["circle"] = "circle"
+    scale: float = Field(default=80.0, gt=0.0)
+    margin: float = Field(default=0.25, ge=0.0, lt=1.0)
+
+
+class ProxyAnchorObjectiveConfig(FrozenModel):
+    kind: Literal["proxy_anchor"] = "proxy_anchor"
+    scale: float = Field(default=32.0, gt=0.0)
+    margin: float = Field(default=0.1, ge=0.0)
+    space: Literal["backbone", "projector"] = "projector"
+
+
+class BatchHardTripletObjectiveConfig(FrozenModel):
+    kind: Literal["batch_hard_triplet"] = "batch_hard_triplet"
+    margin: float = Field(default=0.2, ge=0.0)
+
+
+class MultiSimilarityObjectiveConfig(FrozenModel):
+    kind: Literal["multi_similarity"] = "multi_similarity"
+    alpha: float = Field(default=2.0, gt=0.0)
+    beta: float = Field(default=50.0, gt=0.0)
+    base: float = Field(default=0.5, ge=-1.0, le=1.0)
+    mining_epsilon: float = Field(default=0.1, ge=0.0)
+
+
+class BarlowTwinsObjectiveConfig(FrozenModel):
+    kind: Literal["barlow_twins"] = "barlow_twins"
+    redundancy_weight: float = Field(default=0.005, ge=0.0)
+    eps: float = Field(default=1e-4, gt=0.0)
+
+
+class BYOLObjectiveConfig(FrozenModel):
+    kind: Literal["byol"] = "byol"
+    predictor_hidden_dim: PositiveInt = 512
+    base_target_decay: float = Field(default=0.996, ge=0.0, lt=1.0)
+    final_target_decay: float = Field(default=1.0, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_target_decay(self) -> BYOLObjectiveConfig:
+        if self.final_target_decay < self.base_target_decay:
+            raise ValueError("BYOL final target decay cannot be below its base decay")
+        return self
+
+
+class MoCoObjectiveConfig(FrozenModel):
+    kind: Literal["moco"] = "moco"
+    queue_size: PositiveInt = 16384
+    temperature: float = Field(default=0.07, gt=0.0)
+    target_decay: float = Field(default=0.999, ge=0.0, lt=1.0)
+    symmetric: bool = False
+
+
 ObjectiveConfig = Annotated[
     CrossEntropyObjectiveConfig
     | NTXentObjectiveConfig
     | SupConObjectiveConfig
     | SincereObjectiveConfig
     | SigmoidSupConObjectiveConfig
-    | JointObjectiveConfig,
+    | JointObjectiveConfig
+    | NormalizedSoftmaxObjectiveConfig
+    | CosFaceObjectiveConfig
+    | ArcFaceObjectiveConfig
+    | CircleObjectiveConfig
+    | ProxyAnchorObjectiveConfig
+    | BatchHardTripletObjectiveConfig
+    | MultiSimilarityObjectiveConfig
+    | BarlowTwinsObjectiveConfig
+    | BYOLObjectiveConfig
+    | MoCoObjectiveConfig,
     Field(discriminator="kind"),
 ]
 
@@ -298,3 +381,15 @@ class ExperimentConfig(FrozenModel):
     reproducibility: ReproducibilityConfig = ReproducibilityConfig()
     training: TrainingConfig = TrainingConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
+
+    @model_validator(mode="after")
+    def validate_objective_views(self) -> ExperimentConfig:
+        if (
+            isinstance(
+                self.objective,
+                (BarlowTwinsObjectiveConfig, BYOLObjectiveConfig, MoCoObjectiveConfig),
+            )
+            and self.batch.views != 2
+        ):
+            raise ValueError(f"{self.objective.kind} requires batch.views=2")
+        return self

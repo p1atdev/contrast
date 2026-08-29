@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from contrast.config.loader import load_experiment_config
+from contrast.objectives import build_objective
 
 
 def test_objective_override_replaces_discriminated_table() -> None:
@@ -75,3 +76,34 @@ def test_tracking_can_be_disabled_or_sent_to_an_entity() -> None:
     assert disabled.tracking.mode == "disabled"
     assert team.tracking.entity == "research-team"
     assert team.tracking.project == "contrast-comparisons"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "normalized_softmax",
+        "cosface",
+        "arcface",
+        "circle",
+        "proxy_anchor",
+        "batch_hard_triplet",
+        "multi_similarity",
+        "barlow_twins",
+        "byol",
+        "moco",
+    ],
+)
+def test_extended_objective_configs_build(name: str) -> None:
+    config = load_experiment_config(f"configs/objectives/{name}.toml")
+
+    assert config.objective.kind == name
+    assert build_objective(config.objective, config.model) is not None
+
+
+@pytest.mark.parametrize("name", ["barlow_twins", "byol", "moco"])
+def test_two_view_self_supervised_objectives_reject_extra_views(name: str) -> None:
+    with pytest.raises(ValidationError, match=r"requires batch\.views=2"):
+        load_experiment_config(
+            f"configs/objectives/{name}.toml",
+            ["batch.views=3"],
+        )

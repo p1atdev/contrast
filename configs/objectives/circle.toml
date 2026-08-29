@@ -1,0 +1,6 @@
+extends = "../base.toml"
+
+[objective]
+kind = "circle"
+scale = 80.0
+margin = 0.25

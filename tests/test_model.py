@@ -14,5 +14,7 @@ def test_vit_output_contract() -> None:
     output = build_model(config)(torch.randn(3, 3, 32, 32))
     assert output.features.shape == (3, 48)
     assert output.embeddings.shape == (3, 16)
+    assert output.raw_embeddings is not None
+    assert output.raw_embeddings.shape == (3, 16)
     assert output.logits.shape == (3, 100)
     torch.testing.assert_close(output.embeddings.norm(dim=1), torch.ones(3))

@@ -1,0 +1,7 @@
+extends = "../base.toml"
+
+[objective]
+kind = "byol"
+predictor_hidden_dim = 512
+base_target_decay = 0.996
+final_target_decay = 1.0

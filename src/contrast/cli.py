@@ -51,7 +51,7 @@ def _train(arguments: argparse.Namespace) -> int:
             runtime,
             precision,
             build_model(config.model),
-            build_objective(config.objective),
+            build_objective(config.objective, config.model),
             data,
             store,
         )
@@ -234,8 +234,20 @@ def _expand_sweep(path: Path) -> list[tuple[Path, list[str]]]:
 def _sweep(arguments: argparse.Namespace) -> int:
     path = Path(arguments.sweep).resolve()
     runs = _expand_sweep(path)
-    print(f"sweep combinations={len(runs)}")
+    start_index = arguments.start_index
+    end_index = arguments.end_index or len(runs)
+    if start_index < 1 or end_index < start_index or end_index > len(runs):
+        raise ValueError(
+            f"sweep range must satisfy 1 <= start <= end <= {len(runs)}; "
+            f"received {start_index}..{end_index}"
+        )
+    print(
+        f"sweep combinations={len(runs)} selected={start_index}..{end_index}",
+        flush=True,
+    )
     for index, (config_path, overrides) in enumerate(runs, 1):
+        if index < start_index or index > end_index:
+            continue
         command = [
             sys.executable,
             "-m",
@@ -283,6 +295,8 @@ def build_parser() -> argparse.ArgumentParser:
     sweep = commands.add_parser("sweep", help="run a Cartesian TOML sweep sequentially")
     sweep.add_argument("sweep")
     sweep.add_argument("--dry-run", action="store_true")
+    sweep.add_argument("--start-index", type=int, default=1)
+    sweep.add_argument("--end-index", type=int)
     sweep.set_defaults(handler=_sweep)
 
     wandb_import = commands.add_parser(
@@ -302,7 +316,7 @@ def main() -> None:
     try:
         arguments = build_parser().parse_args()
         raise SystemExit(arguments.handler(arguments))
-    except ValidationError as error:
+    except (ValidationError, ValueError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(2) from error
 

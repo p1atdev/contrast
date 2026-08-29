@@ -72,6 +72,22 @@ def test_wandb_import_subcommand_accepts_destination_and_dry_run() -> None:
     assert arguments.dry_run is True
 
 
+def test_sweep_subcommand_accepts_resume_range() -> None:
+    arguments = build_parser().parse_args(
+        [
+            "sweep",
+            "configs/sweeps/all_methods.toml",
+            "--start-index",
+            "17",
+            "--end-index",
+            "32",
+        ]
+    )
+
+    assert arguments.start_index == 17
+    assert arguments.end_index == 32
+
+
 def test_core_sweep_expands_seed_major() -> None:
     runs = _expand_sweep(Path("configs/sweeps/core_losses.toml").resolve())
 
@@ -87,6 +103,38 @@ def test_core_sweep_expands_seed_major() -> None:
     assert all("run.seed=0" in overrides for _, overrides in runs[:5])
     assert all("run.seed=1" in overrides for _, overrides in runs[5:10])
     assert all('run.experiment="cifar100-core-v3"' in overrides for _, overrides in runs)
+
+
+def test_all_methods_sweeps_cover_every_objective_and_seed() -> None:
+    full = _expand_sweep(Path("configs/sweeps/all_methods.toml").resolve())
+    pilot = _expand_sweep(Path("configs/sweeps/all_methods_pilot.toml").resolve())
+    expected_names = [
+        "ce.toml",
+        "ntxent.toml",
+        "supcon.toml",
+        "sincere.toml",
+        "sigmoid_supcon.toml",
+        "ce_supcon.toml",
+        "normalized_softmax.toml",
+        "cosface.toml",
+        "arcface.toml",
+        "circle.toml",
+        "proxy_anchor.toml",
+        "batch_hard_triplet.toml",
+        "multi_similarity.toml",
+        "barlow_twins.toml",
+        "byol.toml",
+        "moco.toml",
+    ]
+
+    assert len(full) == 48
+    assert [path.name for path, _ in full[:16]] == expected_names
+    assert all("run.seed=0" in overrides for _, overrides in full[:16])
+    assert all("run.seed=1" in overrides for _, overrides in full[16:32])
+    assert all("run.seed=2" in overrides for _, overrides in full[32:])
+    assert len(pilot) == 16
+    assert [path.name for path, _ in pilot] == expected_names
+    assert all("training.max_steps=1000" in overrides for _, overrides in pilot)
 
 
 def test_sweep_preflight_rejects_invalid_later_combination(tmp_path: Path) -> None:

@@ -1,0 +1,6 @@
+extends = "../base.toml"
+
+[objective]
+kind = "barlow_twins"
+redundancy_weight = 0.005
+eps = 0.0001

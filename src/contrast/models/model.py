@@ -12,13 +12,17 @@ class ModelOutput:
     features: torch.Tensor
     embeddings: torch.Tensor
     logits: torch.Tensor
+    raw_embeddings: torch.Tensor | None = None
 
     def as_dict(self) -> dict[str, torch.Tensor]:
-        return {
+        values = {
             "features": self.features,
             "embeddings": self.embeddings,
             "logits": self.logits,
         }
+        if self.raw_embeddings is not None:
+            values["raw_embeddings"] = self.raw_embeddings
+        return values
 
 
 class ProjectionHead(nn.Module):
@@ -31,7 +35,7 @@ class ProjectionHead(nn.Module):
         )
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
-        return F.normalize(self.layers(features), dim=-1)
+        return self.layers(features)
 
 
 class ContrastiveModel(nn.Module):
@@ -50,8 +54,10 @@ class ContrastiveModel(nn.Module):
 
     def forward(self, images: torch.Tensor) -> ModelOutput:
         features = self.encoder(images)
+        raw_embeddings = self.projector(features)
         return ModelOutput(
             features=features,
-            embeddings=self.projector(features),
+            embeddings=F.normalize(raw_embeddings, dim=-1),
             logits=self.classifier(features),
+            raw_embeddings=raw_embeddings,
         )

@@ -1,0 +1,8 @@
+extends = "../base.toml"
+
+[objective]
+kind = "moco"
+queue_size = 16384
+temperature = 0.07
+target_decay = 0.999
+symmetric = false

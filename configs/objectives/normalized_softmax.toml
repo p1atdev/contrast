@@ -1,0 +1,6 @@
+extends = "../base.toml"
+
+[objective]
+kind = "normalized_softmax"
+scale = 32.0
+space = "backbone"

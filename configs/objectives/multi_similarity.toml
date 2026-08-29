@@ -1,0 +1,8 @@
+extends = "../base.toml"
+
+[objective]
+kind = "multi_similarity"
+alpha = 2.0
+beta = 50.0
+base = 0.5
+mining_epsilon = 0.1

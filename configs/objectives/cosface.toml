@@ -1,0 +1,7 @@
+extends = "../base.toml"
+
+[objective]
+kind = "cosface"
+scale = 32.0
+margin = 0.35
+space = "backbone"
