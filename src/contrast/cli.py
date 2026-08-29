@@ -21,6 +21,7 @@ from contrast.objectives import build_objective
 from contrast.reproducibility import seed_everything
 from contrast.runtime import PrecisionManager, RuntimeContext
 from contrast.tracking import RunStore
+from contrast.tracking.naming import wandb_run_name
 from contrast.training import Trainer
 from contrast.training.ema import ExponentialMovingAverage
 from contrast.training.evaluation import evaluate
@@ -29,6 +30,8 @@ from contrast.training.evaluation import evaluate
 def _train(arguments: argparse.Namespace) -> int:
     config = load_experiment_config(arguments.config, arguments.overrides)
     runtime = RuntimeContext.initialize()
+    store: RunStore | None = None
+    exit_code = 1
     try:
         if runtime.distributed:
             raise NotImplementedError(
@@ -39,7 +42,10 @@ def _train(arguments: argparse.Namespace) -> int:
         precision = PrecisionManager(config.precision, runtime.device)
         precision.configure_backends(config.reproducibility)
         data = build_cifar100_loaders(config, runtime)
-        store = RunStore(config)
+        store = RunStore(
+            config,
+            display_name=wandb_run_name(config),
+        )
         trainer = Trainer(
             config,
             runtime,
@@ -54,9 +60,14 @@ def _train(arguments: argparse.Namespace) -> int:
         final = trainer.fit()
         if runtime.is_primary:
             print(f"run={store.directory}\ncheckpoint={final}")
-        return 0
+        exit_code = 0
+        return exit_code
     finally:
-        runtime.close()
+        try:
+            if store is not None:
+                store.finish(exit_code=exit_code)
+        finally:
+            runtime.close()
 
 
 def _validate(arguments: argparse.Namespace) -> int:
@@ -81,8 +92,10 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
         Path(arguments.run_dir).resolve() if arguments.run_dir else checkpoint.parent.parent
     )
     store = RunStore.for_existing_run(run_directory)
-    runtime = RuntimeContext.initialize()
+    runtime: RuntimeContext | None = None
+    exit_code = 1
     try:
+        runtime = RuntimeContext.initialize()
         if runtime.distributed:
             raise NotImplementedError("offline evaluation supports a single process")
         seed_everything(config.run.seed)
@@ -154,9 +167,30 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
         if runtime.is_primary:
             print(f"run={store.directory}")
             print(json.dumps(metrics, indent=2, sort_keys=True))
-        return 0
+        exit_code = 0
+        return exit_code
     finally:
-        runtime.close()
+        try:
+            store.finish(exit_code=exit_code)
+        finally:
+            if runtime is not None:
+                runtime.close()
+
+
+def _wandb_import(arguments: argparse.Namespace) -> int:
+    from contrast.tracking.importer import ImportValidationError, import_runs
+
+    try:
+        import_runs(
+            arguments.runs_dir,
+            project=arguments.project,
+            entity=arguments.entity,
+            dry_run=arguments.dry_run,
+        )
+    except ImportValidationError as error:
+        print(error, file=sys.stderr)
+        return 2
+    return 0
 
 
 def _serialize_override(key: str, value: Any) -> str:
@@ -250,6 +284,16 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("sweep")
     sweep.add_argument("--dry-run", action="store_true")
     sweep.set_defaults(handler=_sweep)
+
+    wandb_import = commands.add_parser(
+        "wandb-import",
+        help="import historical local runs into Weights & Biases",
+    )
+    wandb_import.add_argument("--runs-dir", default="runs")
+    wandb_import.add_argument("--project", default="contrast-lab")
+    wandb_import.add_argument("--entity")
+    wandb_import.add_argument("--dry-run", action="store_true")
+    wandb_import.set_defaults(handler=_wandb_import)
 
     return parser
 

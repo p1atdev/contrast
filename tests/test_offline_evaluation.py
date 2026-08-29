@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pytest
@@ -6,7 +5,6 @@ from pydantic import ValidationError
 
 from contrast.cli import _config_from_checkpoint, _expand_sweep, build_parser
 from contrast.config.loader import load_experiment_config
-from contrast.tracking import RunStore
 
 
 def test_legacy_checkpoint_uses_original_run_seed_for_split() -> None:
@@ -53,17 +51,25 @@ def test_evaluate_subcommand_accepts_checkpoint() -> None:
     assert arguments.queries == "test"
 
 
-def test_existing_run_store_appends_without_reinitializing(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.json"
-    config_path.write_text("{}\n")
+def test_wandb_import_subcommand_accepts_destination_and_dry_run() -> None:
+    arguments = build_parser().parse_args(
+        [
+            "wandb-import",
+            "--runs-dir",
+            "historical-runs",
+            "--project",
+            "contrast-history",
+            "--entity",
+            "research-team",
+            "--dry-run",
+        ]
+    )
 
-    store = RunStore.for_existing_run(tmp_path)
-    store.log({"type": "offline_evaluation", "step": 10, "epoch": 2})
-
-    assert config_path.read_text() == "{}\n"
-    event = json.loads((tmp_path / "metrics.jsonl").read_text())
-    assert event["type"] == "offline_evaluation"
-    assert event["step"] == 10
+    assert arguments.command == "wandb-import"
+    assert arguments.runs_dir == "historical-runs"
+    assert arguments.project == "contrast-history"
+    assert arguments.entity == "research-team"
+    assert arguments.dry_run is True
 
 
 def test_core_sweep_expands_seed_major() -> None:

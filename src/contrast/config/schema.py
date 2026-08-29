@@ -17,6 +17,12 @@ class RunConfig(FrozenModel):
     tags: tuple[str, ...] = ()
 
 
+class TrackingConfig(FrozenModel):
+    project: str = "contrast-lab"
+    entity: str | None = None
+    mode: Literal["online", "offline", "disabled"] = "online"
+
+
 class AugmentationConfig(FrozenModel):
     crop_padding: int = Field(default=4, ge=0)
     horizontal_flip_probability: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -281,6 +287,7 @@ class EvaluationConfig(FrozenModel):
 class ExperimentConfig(FrozenModel):
     schema_version: Literal[1] = 1
     run: RunConfig = RunConfig()
+    tracking: TrackingConfig = TrackingConfig()
     data: DataConfig = DataConfig()
     batch: BatchConfig = BatchConfig()
     model: ModelConfig = ModelConfig()

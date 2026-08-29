@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.11,<3",
     "schedulefree>=1.4,<2",
     "torch>=2.7,<3",
+    "wandb>=0.28.2,<0.29",
 ]
 
 [project.scripts]

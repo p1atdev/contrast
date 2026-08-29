@@ -1,6 +1,6 @@
 # Contrast Lab
 
-PyTorchで教師あり対照学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、dashboard APIにHonoとBunを使います。
+PyTorchで教師あり対照学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、実験追跡にWeights & Biases（W&B）を使います。
 
 ## 比較の前提
 
@@ -23,15 +23,23 @@ CIFAR-100は[`uoft-cs/cifar100`](https://huggingface.co/datasets/uoft-cs/cifar10
 
 ## Setup
 
-Python 3.12とBunを使います。
+Python 3.12を使います。依存関係を同期したら、初回だけW&Bへログインします。
 
 ```bash
 uv sync
-cd web
-bun install
-bun run build
-cd ..
+uv run wandb login
 ```
+
+追跡先は設定ファイルの`[tracking]`で指定します。`entity`は個人アカウントの既定entityを使う場合は省略できます。
+
+```toml
+[tracking]
+project = "contrast-lab"
+# entity = "your-team"
+mode = "online" # "online" | "offline" | "disabled"
+```
+
+`online`は学習中にW&Bへ送信し、`offline`はSDKのローカルデータへ記録して後から`wandb sync`できるようにします。テストや追跡不要の実行では`disabled`を指定できます。
 
 設定の解決結果だけを確認できます。
 
@@ -46,7 +54,7 @@ uv run contrast train -c configs/experiments/smoke.toml
 uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
 ```
 
-本番前に、5損失をseed 0で各1,000 optimizer stepだけ動かすpilotを実行します。lossの有限性、gradient clipping率、throughput、Sigmoidのscale/biasをDashboardで確認します。
+本番前に、5損失をseed 0で各1,000 optimizer stepだけ動かすpilotを実行します。lossの有限性、gradient clipping率、throughput、Sigmoidのscale/biasをW&Bで確認します。
 
 ```bash
 uv run contrast sweep configs/sweeps/core_losses_pilot.toml --dry-run
@@ -139,7 +147,7 @@ CIFAR-100はstratified split後もtrainが各class 450枚で均衡している�
 最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。core sweepでは`test_at_end = false`として、checkpoint選択中にtest splitを参照しません。
 
 `eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失単独ではclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。
-既存checkpointにも同じ評価を後付けできます。checkpointが元runの`checkpoints/`内にあればrun directoryは自動推定され、結果はそのrunの`metrics.jsonl`へ追記されます。移動したcheckpointには`--run-dir`を指定します。GPUを学習runと共有するため、同じGPUでの学習中ではなく停止後または完了後に実行してください。
+既存checkpointにも同じ評価を後付けできます。checkpointが元runの`checkpoints/`内にあればrun directoryは自動推定され、`wandb.json`に保存されたrun IDを使って同じW&B runへ結果を追記します。移動したcheckpointには`--run-dir`を指定します。GPUを学習runと共有するため、同じGPUでの学習中ではなく停止後または完了後に実行してください。
 
 ```bash
 uv run contrast evaluate \
@@ -149,25 +157,24 @@ uv run contrast evaluate \
 
 `--queries`は`config`（保存済み設定に従う）、`eval`、`test`、`both`を選べます。3 seedのvalidation結果からcheckpointと手法を確定した後に、選択済み`best.pt`へ`--queries test`を一度だけ実行します。
 
-## Dashboard
+## W&Bへの記録と過去データの移行
 
-学習メトリクスは各runの`metrics.jsonl`が正本です。Web側のHono APIがrunファイルを直接読むため、Python serverは不要です。UI開発時はViteからAPIと画面を同時に起動します。
-
-```bash
-cd web
-bun run dev
-```
-
-[http://127.0.0.1:5173](http://127.0.0.1:5173) で確認できます。本番相当ではReact UIをbuildし、Bun/HonoからAPIと静的ファイルを同じポートで配信します。
+今後の学習メトリクスはW&Bへ直接記録します。通常の学習コマンドを実行すれば、設定、タグ、学習・評価メトリクスが`tracking.project`のrunに送信されます。run表示名は`実験名/条件名-seed-N`（例: `cifar100-core-v3/sigmoid-supcon-seed-1`）になります。
 
 ```bash
-bun run build
-bun run serve
+uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
 ```
 
-[http://127.0.0.1:8000](http://127.0.0.1:8000) で最大6 runを選び、loss、通常モデルとEMAのbackbone/projector k-NN・frozen linear probe、EMA decay・update回数、gradient、Sigmoidパラメータなどを同時に比較できます。既存runの旧指標もlegacy cardに残ります。
+既存の`runs/`にある`config.json`、`environment.json`、`metrics.jsonl`は一括移行できます。最初にdry-runで対象を確認し、その後に送信します。`--entity`は必要な場合だけ追加してください。
 
-既定ではrepository直下の`runs/`を読みます。変更する場合は`bun run serve --runs-dir /path/to/runs`を指定し、Viteでは`CONTRAST_RUNS_DIR=/path/to/runs bun run dev`を使います。
+```bash
+uv run contrast wandb-import --runs-dir runs --project contrast-lab --dry-run
+uv run contrast wandb-import --runs-dir runs --project contrast-lab
+```
+
+移行では各ローカルrunとW&B runを一対一で対応させ、完了markerによって再実行時の二重送信を防ぎます。同じoptimizer stepにある学習・評価・終了イベントも別々の履歴行として保持し、`step`をグラフの横軸に使います。`environment.json`は再現性に必要な項目だけを送信し、hostname、PID、実行コマンドは送信しません。
+
+モデルとoptimizerのcheckpointは引き続き各runの`checkpoints/`へ原子的に保存されます。W&Bへcheckpointを自動アップロードしないため、resumeとoffline評価にはローカルファイルを残してください。W&B SDKが作る`wandb/`のローカルデータやcacheも、同期完了を確認するまでは削除しないでください。新しいrunでは`metrics.jsonl`を生成しませんが、移行元のファイルは削除しません。
 
 ## Quality checks
 
@@ -175,12 +182,6 @@ bun run serve
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest
-cd web
-bun run format:check
-bun run lint
-bun run typecheck
-bun test
-bun run build
 ```
 
 ## Distributed extension

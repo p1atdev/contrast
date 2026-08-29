@@ -52,3 +52,26 @@ def test_dotted_override_can_replace_ema_decay_schedule() -> None:
     assert config.ema.evaluation_weights == "both"
     assert config.ema.decay.kind == "constant"
     assert config.ema.decay.decay == 0.95
+
+
+def test_tracking_defaults_to_online_contrast_lab_project() -> None:
+    config = load_experiment_config("configs/base.toml")
+
+    assert config.tracking.project == "contrast-lab"
+    assert config.tracking.entity is None
+    assert config.tracking.mode == "online"
+
+
+def test_tracking_can_be_disabled_or_sent_to_an_entity() -> None:
+    disabled = load_experiment_config(
+        "configs/base.toml",
+        ["tracking.mode=disabled"],
+    )
+    team = load_experiment_config(
+        "configs/base.toml",
+        ["tracking.entity=research-team", "tracking.project=contrast-comparisons"],
+    )
+
+    assert disabled.tracking.mode == "disabled"
+    assert team.tracking.entity == "research-team"
+    assert team.tracking.project == "contrast-comparisons"
