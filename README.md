@@ -61,6 +61,14 @@ uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
 ./run_train.sh pilot
 ```
 
+pilot終了後は、test splitを参照せずに全16個の`final.pt`へvalidation k-NNと
+表現collapse診断を追加できます。raw/EMAの両方を評価し、短時間診断では
+linear probeを省きます。結果は各runのW&B履歴へ追記されます。
+
+```bash
+./run_eval.sh all-methods-pilot
+```
+
 pilot確認後、16手法 × 3 seedの本sweepを実行します。sweepは起動前に48組すべてを設定検証し、seedごとに16手法を順番に実行します。結果は`runs/cifar100-all-methods-v1/`へ保存されます。各runは120 epochで、validationだけを使って手法ごとのcheckpointを選びます。
 
 ```bash

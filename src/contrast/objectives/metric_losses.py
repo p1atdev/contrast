@@ -212,7 +212,10 @@ class CosFaceObjective(_ProxyObjective):
         result = _metric_result(loss, "cosface")
         result.metrics.update(
             {
-                "proxy/top1": logits.detach().argmax(dim=1).eq(metadata.labels).float().mean(),
+                "proxy/top1": (cosine.detach().argmax(dim=1).eq(metadata.labels).float().mean()),
+                "proxy/margin_adjusted_top1": (
+                    logits.detach().argmax(dim=1).eq(metadata.labels).float().mean()
+                ),
                 "proxy/scale": torch.tensor(self.scale, device=loss.device),
                 "proxy/margin": torch.tensor(self.margin, device=loss.device),
             }
@@ -258,7 +261,10 @@ class ArcFaceObjective(_ProxyObjective):
         result = _metric_result(loss, "arcface")
         result.metrics.update(
             {
-                "proxy/top1": logits.detach().argmax(dim=1).eq(metadata.labels).float().mean(),
+                "proxy/top1": (cosine.detach().argmax(dim=1).eq(metadata.labels).float().mean()),
+                "proxy/margin_adjusted_top1": (
+                    logits.detach().argmax(dim=1).eq(metadata.labels).float().mean()
+                ),
                 "proxy/scale": torch.tensor(self.scale, device=loss.device),
                 "proxy/margin": torch.tensor(self.margin, device=loss.device),
             }

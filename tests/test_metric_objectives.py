@@ -148,6 +148,44 @@ def test_arcface_zero_margin_matches_normalized_softmax() -> None:
     torch.testing.assert_close(arcface_result.loss, normalized_result.loss)
 
 
+@pytest.mark.parametrize(
+    "objective",
+    [
+        CosFaceObjective(
+            2,
+            2,
+            scale=32.0,
+            margin=0.35,
+            proxies=torch.tensor([[1.0, 0.0], [0.9, 0.4358899]]),
+        ),
+        ArcFaceObjective(
+            2,
+            2,
+            scale=32.0,
+            margin=0.5,
+            proxies=torch.tensor([[1.0, 0.0], [0.9, 0.4358899]]),
+        ),
+    ],
+)
+def test_margin_proxy_top1_uses_unmodified_cosine(objective: torch.nn.Module) -> None:
+    features = torch.tensor([[1.0, 0.0], [1.0, 0.0]], requires_grad=True)
+    output = ModelOutput(
+        features=features,
+        embeddings=torch.randn(2, 3),
+        logits=torch.zeros(2, 2),
+    )
+    metadata = ObjectiveMetadata(
+        labels=torch.zeros(2, dtype=torch.long),
+        source_ids=torch.zeros(2, dtype=torch.long),
+        view_ids=torch.arange(2),
+    )
+
+    result = objective(output, metadata)
+
+    assert result.metrics["proxy/top1"] == 1.0
+    assert result.metrics["proxy/margin_adjusted_top1"] == 0.0
+
+
 def test_circle_loss_matches_pairwise_reference_formula() -> None:
     output, metadata = _problem()
     objective = CircleLossObjective(scale=32.0, margin=0.25)

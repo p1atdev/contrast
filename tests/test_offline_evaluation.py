@@ -43,12 +43,14 @@ def test_evaluate_subcommand_accepts_checkpoint() -> None:
             "runs/example/checkpoints/final.pt",
             "--queries",
             "test",
+            "--skip-linear-probe",
         ]
     )
 
     assert arguments.command == "evaluate"
     assert arguments.checkpoint.endswith("final.pt")
     assert arguments.queries == "test"
+    assert arguments.skip_linear_probe is True
 
 
 def test_wandb_import_subcommand_accepts_destination_and_dry_run() -> None:

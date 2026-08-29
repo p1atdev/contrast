@@ -120,6 +120,7 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
             query_loaders["eval"] = data.validation or data.test
         if include_test:
             query_loaders["test"] = data.test
+        include_linear_probe = not getattr(arguments, "skip_linear_probe", False)
         evaluation_weights = config.ema.evaluation_weights if ema is not None else "raw"
         metrics: dict[str, float] = {}
         if evaluation_weights in {"raw", "both"}:
@@ -131,7 +132,7 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
                     runtime.device,
                     precision,
                     config.evaluation,
-                    include_linear_probe=True,
+                    include_linear_probe=include_linear_probe,
                 )
             )
         if ema is not None and ema.updates and evaluation_weights in {"ema", "both"}:
@@ -144,7 +145,7 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
                     runtime.device,
                     precision,
                     config.evaluation,
-                    include_linear_probe=True,
+                    include_linear_probe=include_linear_probe,
                 )
             )
         if ema is not None:
@@ -284,6 +285,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("config", "eval", "test", "both"),
         default="config",
         help="query split(s); config follows evaluation.test_at_end",
+    )
+    offline.add_argument(
+        "--skip-linear-probe",
+        action="store_true",
+        help="compute k-NN and representation diagnostics without fitting a linear probe",
     )
     offline.set_defaults(handler=_evaluate_checkpoint)
 
