@@ -1,0 +1,22 @@
+configs = [
+  "../objectives/ce.toml",
+  "../objectives/ntxent.toml",
+  "../objectives/supcon.toml",
+  "../objectives/sincere.toml",
+  "../objectives/sigmoid_supcon.toml",
+  "../objectives/ce_supcon.toml",
+  "../objectives/normalized_softmax.toml",
+  "../objectives/cosface.toml",
+  "../objectives/arcface.toml",
+  "../objectives/circle.toml",
+  "../objectives/proxy_anchor.toml",
+  "../objectives/batch_hard_triplet.toml",
+  "../objectives/multi_similarity.toml",
+  "../objectives/barlow_twins.toml",
+  "../objectives/byol.toml",
+  "../objectives/moco.toml",
+]
+
+[grid]
+"run.seed" = [0, 1, 2]
+"run.experiment" = ["cifar100-all-methods-v1"]

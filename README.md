@@ -1,19 +1,19 @@
 # Contrast Lab
 
-PyTorchで教師あり対照学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、実験追跡にWeights & Biases（W&B）を使います。
+PyTorchで教師あり・自己教師あり表現学習を条件統制して比較するための実験基盤です。中核のViT、投影ヘッド、損失、拡張、GradCacheは自前実装し、設定検証にPydantic、Schedule-Free optimizer、実験追跡にWeights & Biases（W&B）を使います。
 
 ## 比較の前提
 
 既定値はCIFAR-100、ViT-Tiny/4相当（dim 192、12 blocks、3 heads）、LayerNorm、GELU、PyTorch SDPAです。global source batch、view数、augmentation、optimizer、precisionを固定し、`objective`だけを差し替えられます。
 
-実装済みの損失は以下です。
+実装済みの手法は以下です。
 
-- Cross-Entropy
-- NT-Xent（同一画像の別viewをpositiveとする）
-- Supervised Contrastive Loss
-- SINCERE
-- Sigmoid-SupCon（SigLIP型のpairwise sigmoidを、同一クラスをpositiveとする多positive設定へ拡張）
-- Cross-Entropy + SupCon
+- 分類・proxy: Cross-Entropy、Normalized Softmax、CosFace、ArcFace、Proxy Anchor
+- 教師ありpair: SupCon、SINCERE、Sigmoid-SupCon、Circle Loss、Batch-hard Triplet、Multi-Similarity
+- 混合: Cross-Entropy + SupCon
+- 自己教師あり: NT-Xent、Barlow Twins、BYOL、MoCo
+
+BYOLはonline predictorとcosine schedule付きmomentum target、MoCoはmomentum key encoderとcheckpoint可能なFIFO queueを持ちます。Barlow Twinsはraw projector出力のcross-correlationを使います。比較対象のViTと2層projectorは全手法で固定し、原論文固有のBatchNorm付きheadへは置換しません。これによりoptimizer、augmentation、parameter budgetの差を抑えますが、原論文architectureの完全再現ではなく、各手法の中核的なobjective/state機構を共通architecture上で比較する実験です。自己教師あり手法はlabelを使わないため、教師あり手法とは別familyとして集計します。
 
 Sigmoid-SupConは画像・テキストの二塔SigLIPそのものではありません。ほかの画像単塔損失とモデル条件を揃えるため、SigLIPのpairwise sigmoid設計を教師ありpositive maskへ適用しています。複数positiveへの拡張では、各anchorのvalid pair loss和をpositive数で割ってからanchor平均します。これは[公式SigLIP実装のpositive数による正規化方針](https://github.com/google-research/big_vision/blob/main/big_vision/trainers/proj/image_text/siglip.py#L287-L308)を複数positiveへ一般化したものです。SINCEREも論文の式に従い、positive pair全体ではなく各anchorのpositive平均を等しく平均します。
 
@@ -54,25 +54,34 @@ uv run contrast train -c configs/experiments/smoke.toml
 uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
 ```
 
-本番前に、5損失をseed 0で各1,000 optimizer stepだけ動かすpilotを実行します。lossの有限性、gradient clipping率、throughput、Sigmoidのscale/biasをW&Bで確認します。
+全16手法の比較は`run_train.sh`から実行します。既定はseed 0・各1,000 optimizer stepのpilotです。lossの有限性、gradient clipping率、throughput、表現collapse、proxy、BYOL target decay、MoCo queueをW&Bで確認します。
 
 ```bash
-uv run contrast sweep configs/sweeps/core_losses_pilot.toml --dry-run
-uv run contrast sweep configs/sweeps/core_losses_pilot.toml
+./run_train.sh pilot --dry-run
+./run_train.sh pilot
 ```
 
-pilot確認後、損失5種 × seed 3種の本sweepを実行します。sweepは起動前に全組合せを設定検証し、seedごとに5損失を順番に実行します。結果は既存runと分離した`runs/cifar100-core-v3/`へ保存されます。各runは120 epochで、400 epochの初回sweepで観測された80〜120 epoch付近の性能ピークを含みます。
+pilot確認後、16手法 × 3 seedの本sweepを実行します。sweepは起動前に48組すべてを設定検証し、seedごとに16手法を順番に実行します。結果は`runs/cifar100-all-methods-v1/`へ保存されます。各runは120 epochで、validationだけを使って手法ごとのcheckpointを選びます。
 
 ```bash
-uv run contrast sweep configs/sweeps/core_losses.toml --dry-run
-uv run contrast sweep configs/sweeps/core_losses.toml
+./run_train.sh full --dry-run
+./run_train.sh full
 ```
+
+各組合せにはdry-runに表示される1始まりのindexが付きます。長いsweepを分割または中断位置から再開する場合は範囲を指定できます。
+
+```bash
+./run_train.sh full --start-index 17 --end-index 32
+./run_train.sh full --start-index 33
+```
+
+従来の5損失だけを再実行する`configs/sweeps/core_losses*.toml`も残しています。
 
 ## PrecisionとGradCache
 
 既定はFP32 parameter、BF16 autocast、FP32 loss、TF32許可です。TF32自体は主に速度向上の設定で、activation memory削減はBF16 autocastが担います。同じGPU・ソフトウェア条件でseed、data order、viewごとのaugmentationを固定します。より強い決定性が必要なら`reproducibility.mode = "strict"`を指定できます。
 
-GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。`tests/test_grad_cache.py`でDirectとの勾配一致を検証します。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。今回のViT-Tiny・logical batch 256 sourceはRTX 4070 Ti SUPER上でDirect実行が約2.8 GiBに収まり、GradCache 128 source chunkより約21%高速だったため、本sweepの既定は`step_strategy = "direct"`です。SupConの短時間計測ではbatch 512/1024へ増やしてもsource throughputは向上せず、1024は約11.8 GiBを使用しました。pair行列とbatch内positive/negative数も変わるため、core sweepはbatch 256を維持します。より大きなbatch/modelでOOMする場合は`"grad_cache"`へ切り替え、`batch.grad_cache_chunk_size_per_rank`を調整します。
+GradCacheはlogical batch全体の表現から一度だけ損失を計算し、chunkごとにforwardを再実行します。optimizer stepはlogical batchにつき1回です。通常のpair/proxy lossに加え、Barlow Twinsのraw projector出力、BYOLのdetached target、MoCoのkeyとqueue一回更新についてもDirectとの勾配・state一致をテストします。現時点のGradCacheはFP32/BF16を対象とし、FP16 GradScalerは明示的に拒否します。今回のViT-Tiny・logical batch 256 sourceはRTX 4070 Ti SUPER上でDirect実行が約2.8 GiBに収まり、GradCache 128 source chunkより約21%高速だったため、本sweepの既定は`step_strategy = "direct"`です。SupConの短時間計測ではbatch 512/1024へ増やしてもsource throughputは向上せず、1024は約11.8 GiBを使用しました。pair行列とbatch内positive/negative数も変わるため、全手法でbatch 256を維持します。より大きなbatch/modelでOOMする場合は`"grad_cache"`へ切り替え、`batch.grad_cache_chunk_size_per_rank`を調整します。
 
 Schedule-Freeでは学習時と評価時のparameter viewが異なるため、評価とcheckpoint保存を必ずoptimizerのeval mode内で行います。optimizerの`weight_decay_policy = "standard"`はLinear/Conv等の行列weightだけをdecayし、bias、Norm、class token、position embedding、Sigmoid lossのscalar parameterを除外します。旧single-group optimizer checkpointはresume時に新しいgroupへ移行します。非有限lossまたはgradientはそのstepで即座に例外にします。
 
@@ -131,6 +140,8 @@ power = 0.6666666666666666
 
 `evaluation_weights`は通常モデルだけを評価する`"raw"`、EMAだけを評価する`"ema"`、両方を評価する`"both"`から選びます。通常モデルの指標は`eval/*`と`test/*`、EMA指標は`eval_ema/*`と`test_ema/*`へ分けて記録されます。checkpointには通常モデルとEMA shadow、update回数、最新decayが保存され、resume後もschedule stateを復元します。`contrast evaluate --checkpoint ...`もcheckpointからEMAを復元し、保存済みconfigの`evaluation_weights`に従ってoffline評価します。EMAを有効にするとshadow model一つ分のparameter memoryが追加で必要です。
 
+BYOL/MoCoの内部target encoderはこの評価用EMAとは別です。内部targetとMoCo queueはobjective stateとしてcheckpoint/resumeされ、`target/*`、`byol/*`、`moco/*`へ記録されます。評価用EMAはこれまでどおりonline backboneだけを追跡します。
+
 ## 評価プロトコル
 
 `run.seed`はモデル初期化・data order・augmentationを制御し、train/validation分割は独立した`data.split_seed`で固定します。これにより、seed sweepで評価画像そのものが変わる交絡を避けます。
@@ -146,7 +157,7 @@ CIFAR-100はstratified split後もtrainが各class 450枚で均衡している�
 
 最終epochではencoderをeval modeで凍結し、augmentationなしのtrain featureを一度だけ抽出します。その固定feature上で共通の`nn.Linear`をSGD + cosine decayで学習し、`eval/linear_probe_top1`を記録します。encoderやprojectorへ勾配は流れず、probeのseed・epoch・batch size・optimizer条件は`[evaluation.linear_probe]`で全run共通です。core sweepでは`test_at_end = false`として、checkpoint選択中にtest splitを参照しません。
 
-`eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失単独ではclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。
+`eval/joint_classifier_top1`は補助診断です。CE/CE+SupConでは学習されますが、対照損失、自己教師あり、objective-owned proxyを使う手法ではmodelのclassifier headがobjectiveに含まれないためchance accuracy付近になるのが正常です。proxy手法の学習中accuracyは`proxy/top1`へ記録します。手法間の主要比較にはbackbone k-NNとfrozen linear probeを使います。
 既存checkpointにも同じ評価を後付けできます。checkpointが元runの`checkpoints/`内にあればrun directoryは自動推定され、`wandb.json`に保存されたrun IDを使って同じW&B runへ結果を追記します。移動したcheckpointには`--run-dir`を指定します。GPUを学習runと共有するため、同じGPUでの学習中ではなく停止後または完了後に実行してください。
 
 ```bash
