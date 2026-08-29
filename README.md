@@ -69,6 +69,15 @@ linear probeを省きます。結果は各runのW&B履歴へ追記されます�
 ./run_eval.sh all-methods-pilot
 ```
 
+pilotでclip前global normが10を超えた手法だけを対象に、閾値100で6 epoch
+（約1,056 step）を再確認する監査sweepも用意しています。最終epochに
+validation k-NNとcollapse診断をraw/EMAの両方で実行し、linear probeは省きます。
+
+```bash
+./run_train.sh clip-audit --dry-run
+./run_train.sh clip-audit
+```
+
 pilot確認後、16手法 × 3 seedの本sweepを実行します。sweepは起動前に48組すべてを設定検証し、seedごとに16手法を順番に実行します。結果は`runs/cifar100-all-methods-v1/`へ保存されます。各runは120 epochで、validationだけを使って手法ごとのcheckpointを選びます。
 
 ```bash

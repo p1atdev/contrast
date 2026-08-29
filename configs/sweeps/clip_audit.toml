@@ -1,0 +1,18 @@
+configs = [
+  "../objectives/ntxent.toml",
+  "../objectives/sigmoid_supcon.toml",
+  "../objectives/ce_supcon.toml",
+  "../objectives/normalized_softmax.toml",
+  "../objectives/cosface.toml",
+  "../objectives/circle.toml",
+  "../objectives/barlow_twins.toml",
+  "../objectives/moco.toml",
+]
+
+[grid]
+"run.seed" = [0]
+"run.experiment" = ["cifar100-clip-audit-v1"]
+"training.epochs" = [6]
+"training.gradient_clip_norm" = [100.0]
+"training.evaluate_every_epochs" = [6]
+"evaluation.linear_probe.enabled" = [false]

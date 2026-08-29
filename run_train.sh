@@ -17,8 +17,11 @@ case "$mode" in
   full)
     sweep="configs/sweeps/all_methods.toml"
     ;;
+  clip-audit)
+    sweep="configs/sweeps/clip_audit.toml"
+    ;;
   *)
-    printf 'Usage: %s [pilot|full] [--dry-run]\n' "$0" >&2
+    printf 'Usage: %s [pilot|clip-audit|full] [--dry-run]\n' "$0" >&2
     exit 2
     ;;
 esac

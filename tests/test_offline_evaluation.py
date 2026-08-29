@@ -139,6 +139,24 @@ def test_all_methods_sweeps_cover_every_objective_and_seed() -> None:
     assert all("training.max_steps=1000" in overrides for _, overrides in pilot)
 
 
+def test_clip_audit_covers_objectives_that_clipped_in_pilot() -> None:
+    runs = _expand_sweep(Path("configs/sweeps/clip_audit.toml").resolve())
+
+    assert [path.name for path, _ in runs] == [
+        "ntxent.toml",
+        "sigmoid_supcon.toml",
+        "ce_supcon.toml",
+        "normalized_softmax.toml",
+        "cosface.toml",
+        "circle.toml",
+        "barlow_twins.toml",
+        "moco.toml",
+    ]
+    assert all("training.epochs=6" in overrides for _, overrides in runs)
+    assert all("training.gradient_clip_norm=100.0" in overrides for _, overrides in runs)
+    assert all("evaluation.linear_probe.enabled=false" in overrides for _, overrides in runs)
+
+
 def test_sweep_preflight_rejects_invalid_later_combination(tmp_path: Path) -> None:
     base = Path("configs/base.toml").resolve()
     sweep = tmp_path / "invalid.toml"
