@@ -70,7 +70,7 @@ linear probeを省きます。結果は各runのW&B履歴へ追記されます�
 ```
 
 pilotでclip前global normが10を超えた手法だけを対象に、閾値100で6 epoch
-（約1,056 step）を再確認する監査sweepも用意しています。最終epochに
+（1,050 step）を再確認する監査sweepも用意しています。最終epochに
 validation k-NNとcollapse診断をraw/EMAの両方で実行し、linear probeは省きます。
 
 ```bash
@@ -104,7 +104,7 @@ Schedule-Freeでは学習時と評価時のparameter viewが異なるため、�
 
 `optimization/lr`はSchedule-Freeの基準`lr`ではなく、linear warmupを反映してoptimizerが公開する`scheduled_lr`を記録します。通常のAdamWではscheduler適用後の`lr`を記録します。
 
-本sweepはraw/EMA評価と途中checkpointを20 epochごとに実行します。`eval/backbone_knn_top1`が改善した評価時点は`best.pt`へ原子的に上書き保存し、最終epochは`final.pt`へ保存します。gradient clipは10.0とし、初期の大きな勾配を抑えつつ定常時の常時clipを避けます。clip前後のglobal norm、clip係数、model/objective別norm、CUDA allocated/reserved memoryを記録します。
+本sweepはraw/EMA評価と途中checkpointを20 epochごとに実行します。`eval/backbone_knn_top1`が改善した評価時点は`best.pt`へ原子的に上書き保存し、最終epochは`final.pt`へ保存します。gradient clipは100.0とします。pilotで10.0を超えた8手法を6 epoch再実行したところ、100.0でも全runが有限のまま完走し、定常時のgradientを通しながらCircle/Barlow Twinsの初期スパイクだけをclipできたためです。clip前後のglobal norm、clip係数、model/objective別norm、CUDA allocated/reserved memoryを記録します。
 
 ## EMA
 

@@ -16,7 +16,7 @@ def test_objective_override_replaces_discriminated_table() -> None:
     assert config.objective.bias_init == -10.0
     assert config.optimizer.weight_decay_policy == "standard"
     assert config.training.epochs == 120
-    assert config.training.gradient_clip_norm == 10.0
+    assert config.training.gradient_clip_norm == 100.0
     assert config.evaluation.selection_metric == "eval/backbone_knn_top1"
     assert not config.evaluation.test_at_end
 

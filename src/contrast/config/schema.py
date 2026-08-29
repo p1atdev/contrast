@@ -331,7 +331,7 @@ class TrainingConfig(FrozenModel):
     log_every_steps: PositiveInt = 20
     evaluate_every_epochs: PositiveInt = 1
     checkpoint_every_epochs: PositiveInt = 1
-    gradient_clip_norm: float | None = Field(default=1.0, gt=0.0)
+    gradient_clip_norm: float | None = Field(default=100.0, gt=0.0)
     max_steps: PositiveInt | None = None
 
 
