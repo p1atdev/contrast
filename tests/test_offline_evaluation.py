@@ -53,27 +53,6 @@ def test_evaluate_subcommand_accepts_checkpoint() -> None:
     assert arguments.skip_linear_probe is True
 
 
-def test_wandb_import_subcommand_accepts_destination_and_dry_run() -> None:
-    arguments = build_parser().parse_args(
-        [
-            "wandb-import",
-            "--runs-dir",
-            "historical-runs",
-            "--project",
-            "contrast-history",
-            "--entity",
-            "research-team",
-            "--dry-run",
-        ]
-    )
-
-    assert arguments.command == "wandb-import"
-    assert arguments.runs_dir == "historical-runs"
-    assert arguments.project == "contrast-history"
-    assert arguments.entity == "research-team"
-    assert arguments.dry_run is True
-
-
 def test_sweep_subcommand_accepts_resume_range() -> None:
     arguments = build_parser().parse_args(
         [

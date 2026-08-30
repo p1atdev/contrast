@@ -40,6 +40,7 @@ mode = "online" # "online" | "offline" | "disabled"
 ```
 
 `online`は学習中にW&Bへ送信し、`offline`はSDKのローカルデータへ記録して後から`wandb sync`できるようにします。テストや追跡不要の実行では`disabled`を指定できます。
+run表示名は`実験名/条件名-seed-N`（例: `cifar100-core-v3/sigmoid-supcon-seed-1`）です。メトリクスはW&Bへ記録し、設定とcheckpointは後付け評価やresumeのため`runs/`にも保存します。
 
 設定の解決結果だけを確認できます。
 
@@ -158,8 +159,8 @@ source/sで、全手法の最大PyTorch allocated VRAMは約2.94 GiBでした。
 
 raw backbone k-NNのseed別test値は62.69%、63.41%、63.28%です。validationの
 62.97 ± 0.70%に対してtestは63.13 ± 0.38%で、選択後のtest評価でも同程度の
-性能を維持しました。実行ログとcheckpointは`runs/cifar100-all-methods-v1/`、
-W&B上の実験名は`cifar100-all-methods-v1`です。
+性能を維持しました。checkpointは`runs/cifar100-all-methods-v1/`、メトリクスは
+W&Bの`cifar100-all-methods-v1`にあります。
 
 ## PrecisionとGradCache
 
@@ -259,25 +260,6 @@ backbone k-NNによりProxy Anchorを選択しました。各seedで選択済み
 ```bash
 ./run_eval.sh all-methods-winner-test
 ```
-
-## W&Bへの記録と過去データの移行
-
-今後の学習メトリクスはW&Bへ直接記録します。通常の学習コマンドを実行すれば、設定、タグ、学習・評価メトリクスが`tracking.project`のrunに送信されます。run表示名は`実験名/条件名-seed-N`（例: `cifar100-core-v3/sigmoid-supcon-seed-1`）になります。
-
-```bash
-uv run contrast train -c configs/objectives/sigmoid_supcon.toml --set run.seed=1
-```
-
-既存の`runs/`にある`config.json`、`environment.json`、`metrics.jsonl`は一括移行できます。最初にdry-runで対象を確認し、その後に送信します。`--entity`は必要な場合だけ追加してください。
-
-```bash
-uv run contrast wandb-import --runs-dir runs --project contrast-lab --dry-run
-uv run contrast wandb-import --runs-dir runs --project contrast-lab
-```
-
-移行では各ローカルrunとW&B runを一対一で対応させ、完了markerによって再実行時の二重送信を防ぎます。同じoptimizer stepにある学習・評価・終了イベントも別々の履歴行として保持し、`step`をグラフの横軸に使います。`environment.json`は再現性に必要な項目だけを送信し、hostname、PID、実行コマンドは送信しません。
-
-モデルとoptimizerのcheckpointは引き続き各runの`checkpoints/`へ原子的に保存されます。W&Bへcheckpointを自動アップロードしないため、resumeとoffline評価にはローカルファイルを残してください。W&B SDKが作る`wandb/`のローカルデータやcacheも、同期完了を確認するまでは削除しないでください。新しいrunでは`metrics.jsonl`を生成しませんが、移行元のファイルは削除しません。
 
 ## Quality checks
 

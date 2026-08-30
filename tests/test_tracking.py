@@ -50,7 +50,7 @@ def _config(tmp_path: Path, *overrides: str):
     )
 
 
-def test_new_run_initializes_wandb_and_keeps_only_local_run_artifacts(
+def test_new_run_initializes_wandb_and_creates_checkpoint_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -96,9 +96,7 @@ def test_new_run_initializes_wandb_and_keeps_only_local_run_artifacts(
         "url": "https://wandb.example/runs/server-run-id",
     }
     assert (store.directory / "config.json").is_file()
-    assert (store.directory / "environment.json").is_file()
     assert store.checkpoint_directory.is_dir()
-    assert not (store.directory / "metrics.jsonl").exists()
 
     checkpoint = store.save_checkpoint({"epoch": 1}, "final.pt")
 

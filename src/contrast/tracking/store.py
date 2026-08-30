@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
-import socket
-import subprocess
-import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -107,18 +103,6 @@ def _atomic_write_text(destination: Path, contents: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _git_value(*arguments: str) -> str | None:
-    try:
-        return subprocess.run(
-            ("git", *arguments),
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
 def _load_config(path: Path) -> ExperimentConfig:
     try:
         return ExperimentConfig.model_validate_json(path.read_text())
@@ -191,22 +175,6 @@ class RunStore:
         self.checkpoint_directory = self.directory / "checkpoints"
         self.checkpoint_directory.mkdir(parents=True)
         (self.directory / "config.json").write_text(canonical_config_json(config))
-        environment = {
-            "created_at": datetime.now(UTC).isoformat(),
-            "hostname": socket.gethostname(),
-            "platform": platform.platform(),
-            "python": sys.version,
-            "torch": torch.__version__,
-            "cuda": torch.version.cuda,
-            "device": torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu",
-            "git_commit": _git_value("rev-parse", "HEAD"),
-            "git_dirty": bool(_git_value("status", "--porcelain")),
-            "command": sys.argv,
-            "pid": os.getpid(),
-        }
-        (self.directory / "environment.json").write_text(
-            json.dumps(environment, indent=2, sort_keys=True) + "\n"
-        )
 
         run_id = uuid.uuid4().hex
         self._finished = False

@@ -178,22 +178,6 @@ def _evaluate_checkpoint(arguments: argparse.Namespace) -> int:
                 runtime.close()
 
 
-def _wandb_import(arguments: argparse.Namespace) -> int:
-    from contrast.tracking.importer import ImportValidationError, import_runs
-
-    try:
-        import_runs(
-            arguments.runs_dir,
-            project=arguments.project,
-            entity=arguments.entity,
-            dry_run=arguments.dry_run,
-        )
-    except ImportValidationError as error:
-        print(error, file=sys.stderr)
-        return 2
-    return 0
-
-
 def _serialize_override(key: str, value: Any) -> str:
     return f"{key}={json.dumps(value, separators=(',', ':'))}"
 
@@ -304,16 +288,6 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--start-index", type=int, default=1)
     sweep.add_argument("--end-index", type=int)
     sweep.set_defaults(handler=_sweep)
-
-    wandb_import = commands.add_parser(
-        "wandb-import",
-        help="import historical local runs into Weights & Biases",
-    )
-    wandb_import.add_argument("--runs-dir", default="runs")
-    wandb_import.add_argument("--project", default="contrast-lab")
-    wandb_import.add_argument("--entity")
-    wandb_import.add_argument("--dry-run", action="store_true")
-    wandb_import.set_defaults(handler=_wandb_import)
 
     return parser
 
