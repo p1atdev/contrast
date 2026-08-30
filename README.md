@@ -94,6 +94,73 @@ pilot確認後、16手法 × 3 seedの本sweepを実行します。sweepは起�
 
 従来の5損失だけを再実行する`configs/sweeps/core_losses*.toml`も残しています。
 
+## 実験結果: cifar100-all-methods-v1
+
+2026年8月に、commit `c7e2f7357c1e601f2bbed5c08ab6327fe90a5579`の
+設定で16手法 × 3 seed、計48 runを実行しました。全runが120 epoch
+（21,000 optimizer step）を有限lossのまま完走し、`best.pt`と`final.pt`が
+すべて保存されています。GPUはNVIDIA GeForce RTX 4070 Ti SUPER、global
+source batchは256、各source 2 views、optimizerはAdamW Schedule-Freeです。
+
+次表の`Best validation k-NN`は、20 epochごとに測定したraw backbone k-NNの
+最大値をseedごとに選び、その3 seed平均と標本標準偏差を示します。
+`Final linear probe`はcheckpoint選択とは独立に、120 epoch終了時のraw backbone
+上で学習したprobeです。したがって、学習後半にcollapseした手法では両列が異なる
+時点の表現を測っています。
+
+| 手法 | Best validation k-NN | Final linear probe |
+|---|---:|---:|
+| Proxy Anchor | **62.97 ± 0.70%** | 61.73 ± 0.59% |
+| SupCon | 62.58 ± 0.26% | 61.75 ± 0.70% |
+| Cross-Entropy + SupCon | 61.98 ± 0.64% | **61.84 ± 0.26%** |
+| SINCERE | 61.96 ± 0.91% | 61.15 ± 0.93% |
+| Sigmoid-SupCon | 61.85 ± 0.23% | 60.47 ± 0.55% |
+| Normalized Softmax | 61.80 ± 0.37% | 61.11 ± 0.12% |
+| CosFace | 60.59 ± 0.10% | 59.79 ± 0.35% |
+| Cross-Entropy | 59.69 ± 0.48% | 59.73 ± 0.43% |
+| Multi-Similarity | 58.16 ± 0.63% | 56.08 ± 0.63% |
+| MoCo | 37.49 ± 0.71% | 40.23 ± 0.84% |
+| NT-Xent | 29.75 ± 0.02% | 29.85 ± 0.18% |
+| BYOL | 28.25 ± 0.08% | 34.74 ± 0.18% |
+| Barlow Twins | 24.82 ± 0.14% | 28.81 ± 1.09% |
+| Batch-hard Triplet | 14.30 ± 2.40% | 3.15 ± 0.74% |
+| ArcFace | 13.67 ± 21.86% | 1.00 ± 0.23% |
+| Circle Loss | 11.03 ± 1.82% | 15.01 ± 5.93% |
+
+主要指標ではProxy Anchorが首位ですが、SupConとの差は0.39ポイントで、
+3 seedの分散に対して十分大きな差ではありません。linear probeではProxy Anchor、
+SupCon、Cross-Entropy + SupConが実質的に同等です。Sigmoid-SupConは共通条件下で
+Cross-Entropyをbest k-NNで約2.16ポイント上回りました。自己教師あり群ではMoCoが
+最良でしたが、固定のLayerNorm ViT、共通projector、共通augmentationでの結果であり、
+BatchNorm付きheadや手法固有augmentationを含む原論文recipeの比較ではありません。
+
+学習曲線と表現診断から、Batch-hard Tripletは後半にprojectorの平均pairwise cosineが
+0.999997となりcollapseしました。ArcFaceも最終的に全seedがchance accuracyへcollapseし、
+うち2 seedは最初の評価時点から失敗しました。Circle Loss、Barlow Twins、NT-Xentも
+中盤のピーク後に性能が低下しました。一方、Multi-Similarity、BYOL、MoCoは120 epoch
+時点まで概ね改善傾向でした。これらの失敗・未収束も、同一学習条件を固定した比較結果の
+一部として扱います。
+
+外部EMAは教師あり上位群ではraw modelを概ね0.2〜0.6ポイント下回り、MoCo/BYOLでは
+ごく小さな改善に留まりました。gradient clip閾値100では、ログ点ベースのclip率が
+Circle Lossで平均15.65%、Barlow Twinsで1.02%、その他はほぼ0%でした。通常手法の
+throughputは約4.74k〜4.88k source/s、target encoderを持つBYOL/MoCoは約3.75k
+source/sで、全手法の最大PyTorch allocated VRAMは約2.94 GiBでした。
+
+事前に固定した主要指標に従い、Proxy Anchorのseed別`best.pt`（epoch 100、120、120）
+だけをtest splitで一度評価しました。test setは手法・checkpoint選択には使用していません。
+
+| Test指標 | Raw | EMA |
+|---|---:|---:|
+| Backbone k-NN | **63.13 ± 0.38%** | 62.78 ± 0.24% |
+| Projector k-NN | **62.61 ± 0.31%** | 62.04 ± 0.14% |
+| Linear probe | **61.37 ± 0.60%** | 61.04 ± 0.46% |
+
+raw backbone k-NNのseed別test値は62.69%、63.41%、63.28%です。validationの
+62.97 ± 0.70%に対してtestは63.13 ± 0.38%で、選択後のtest評価でも同程度の
+性能を維持しました。実行ログとcheckpointは`runs/cifar100-all-methods-v1/`、
+W&B上の実験名は`cifar100-all-methods-v1`です。
+
 ## PrecisionとGradCache
 
 既定はFP32 parameter、BF16 autocast、FP32 loss、TF32許可です。TF32自体は主に速度向上の設定で、activation memory削減はBF16 autocastが担います。同じGPU・ソフトウェア条件でseed、data order、viewごとのaugmentationを固定します。より強い決定性が必要なら`reproducibility.mode = "strict"`を指定できます。
