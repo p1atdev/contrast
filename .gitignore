@@ -6,6 +6,3 @@ __pycache__/
 /data/
 /runs/
 /wandb/
-web/node_modules/
-web/dist/
-web/.vite/
