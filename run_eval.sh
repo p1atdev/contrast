@@ -19,6 +19,17 @@ case "$mode" in
     queries="test"
     extra_arguments=()
     ;;
+  all-methods-winner-test)
+    # Proxy Anchor had the highest mean validation backbone k-NN over three
+    # seeds. Evaluate only its preselected per-seed best checkpoints on test.
+    checkpoints=(
+      "runs/cifar100-all-methods-v1/20260829T121231Z-0000/checkpoints/best.pt"
+      "runs/cifar100-all-methods-v1/20260829T172911Z-0001/checkpoints/best.pt"
+      "runs/cifar100-all-methods-v1/20260829T224551Z-0002/checkpoints/best.pt"
+    )
+    queries="test"
+    extra_arguments=()
+    ;;
   all-methods-pilot)
     checkpoints=(runs/cifar100-all-methods-v1-pilot/*/checkpoints/final.pt)
     if (( ${#checkpoints[@]} != 16 )); then
@@ -29,7 +40,7 @@ case "$mode" in
     extra_arguments=(--skip-linear-probe)
     ;;
   *)
-    printf 'Usage: %s [selected-test|all-methods-pilot]\n' "$0" >&2
+    printf 'Usage: %s [selected-test|all-methods-pilot|all-methods-winner-test]\n' "$0" >&2
     exit 2
     ;;
 esac

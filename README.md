@@ -185,6 +185,14 @@ uv run contrast evaluate \
 
 `--queries`は`config`（保存済み設定に従う）、`eval`、`test`、`both`を選べます。3 seedのvalidation結果からcheckpointと手法を確定した後に、選択済み`best.pt`へ`--queries test`を一度だけ実行します。
 
+全16手法sweepでは、事前に定めた主要指標である3 seed平均のbest validation
+backbone k-NNによりProxy Anchorを選択しました。各seedで選択済みの`best.pt`
+だけをtest splitで一度評価するコマンドは次のとおりです。
+
+```bash
+./run_eval.sh all-methods-winner-test
+```
+
 ## W&Bへの記録と過去データの移行
 
 今後の学習メトリクスはW&Bへ直接記録します。通常の学習コマンドを実行すれば、設定、タグ、学習・評価メトリクスが`tracking.project`のrunに送信されます。run表示名は`実験名/条件名-seed-N`（例: `cifar100-core-v3/sigmoid-supcon-seed-1`）になります。
